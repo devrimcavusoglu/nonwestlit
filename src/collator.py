@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any
 
-from transformers import DataCollator, PreTrainedTokenizerBase, AutoTokenizer
+import torch
+from transformers import PreTrainedTokenizerBase, AutoTokenizer
 
 
 @dataclass
@@ -16,23 +17,16 @@ class NONWESTLITDataCollator:
             "labels": []
         }
         for instance in features:
-            tokens = self.tokenizer(instance["text"], truncation=True)
-            batch["input_ids"].append(tokens["input_ids"])
-            batch["attention_mask"].append(tokens["attention_mask"])
-            batch["labels"].append(instance["text_type"])
+            tokenized_input = self.tokenizer(
+                    instance["input_ids"], truncation=True, return_tensors=self.return_tensors
+            )
+            batch["input_ids"].append(tokenized_input["input_ids"])
+            batch["attention_mask"].append(tokenized_input["attention_mask"])
+            batch["labels"].append(instance["labels"])
+
+        for k, v in batch.items():
+            if k == "labels":
+                batch[k] = torch.tensor(v).view(-1, 1)
+                continue
+            batch[k] = torch.cat(v)
         return batch
-
-
-if __name__ == "__main__":
-    from src.dataset import NONWESTLITDataset
-    from torch.utils.data import DataLoader
-
-    model_name = "tiiuae/falcon-7b"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    dataset = NONWESTLITDataset("/home/devrim/lab/gh/nonwestlit/test_data/toy_dataset.json")
-    collator = NONWESTLITDataCollator(tokenizer=tokenizer)
-    train_loader = DataLoader(dataset, batch_size=2, collate_fn=collator)
-    for x in train_loader:
-        print(x)
-        break
-

@@ -31,6 +31,6 @@ class NONWESTLITDataset(Dataset):
 		return dict(
 					iid=instance["id"],
 					title=instance["title"],
-					text=instance["article"],
-					text_type=int(instance["text_type"]) - 1  # text_type index start from 1
+					input_ids=instance["article"],
+					labels=int(instance["text_type"]) - 1  # text_type index start from 1
 			)
