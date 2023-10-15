@@ -2,8 +2,8 @@ from typing import List, Dict
 
 import fire
 from torch import nn
-from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from torch.utils.data import DataLoader
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, FalconForSequenceClassification
 import torch
 
 from src.dataset import NONWESTLITDataset
@@ -11,7 +11,7 @@ from src.dataset import NONWESTLITDataset
 
 def init_model(model_name_or_path: str, num_labels: int):
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    model = AutoModelForSequenceClassification(model_name_or_path, num_labels=num_labels)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, num_labels=num_labels)
     return tokenizer, model
 
 
@@ -26,12 +26,17 @@ def train(data_loader: DataLoader, tokenizer, model: nn.Module):
 
 
 def main(model_name_or_path: str, data_path: str, num_labels: int = 3, batch_size: int = 2):
-    # tiiuae/falcon-7b
+    model: FalconForSequenceClassification
     tokenizer, model = init_model(model_name_or_path, num_labels)
+    model.transformer.requires_grad_(False)  # freeze the base transformer
     dataset = NONWESTLITDataset(data_path)
-    train_loader = DataLoader(dataset, batch_size=batch_size)
-    train(train_loader, tokenizer, model)
+    training_args = TrainingArguments(output_dir="/home/devrim/lab/gh/nonwestlit/outputs", per_device_train_batch_size=batch_size)
+    trainer = Trainer(model=model, train_dataset=dataset, tokenizer=tokenizer, args=training_args)
+    trainer.train()
 
 
 if __name__ == "__main__":
-    fire.Fire(main)
+    # fire.Fire(main)
+    model_name = "tiiuae/falcon-7b"
+    data_path = "/home/devrim/lab/gh/nonwestlit/test_data/toy_dataset.json"
+    main(model_name_or_path=model_name, data_path=data_path, num_labels=3, batch_size=2)
