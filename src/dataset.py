@@ -1,16 +1,8 @@
-from dataclasses import dataclass
+from typing import Dict
 
 from torch.utils.data import Dataset
 
 from src.utils import read_json
-
-
-@dataclass
-class NONWESTLITClassificationInstance:
-	iid: int
-	title: str
-	text: str
-	text_type: int
 
 
 class NONWESTLITDataset(Dataset):
@@ -34,9 +26,9 @@ class NONWESTLITDataset(Dataset):
 	def __len__(self):
 		return len(self._dataset)
 
-	def get_item(self, index: int) -> NONWESTLITClassificationInstance:
+	def get_item(self, index: int) -> Dict:
 		instance = self._dataset[index]
-		return NONWESTLITClassificationInstance(
+		return dict(
 					iid=instance["id"],
 					title=instance["title"],
 					text=instance["article"],
