@@ -50,8 +50,4 @@ def main(
 
 
 if __name__ == "__main__":
-    # fire.Fire(main)
-    model_name = "tiiuae/falcon-7b"
-    data_path = "/home/devrim/lab/gh/nonwestlit/test_data/toy_dataset.json"
-    output_dir = "/home/devrim/lab/gh/nonwestlit/outputs/trial"
-    main(model_name_or_path="albert-base-v2", data_path=data_path, num_labels=3, batch_size=2, device="cpu",output_dir=output_dir)
+    fire.Fire(main)
