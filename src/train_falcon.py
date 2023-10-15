@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, FalconForSequenceClassification
 import torch
 
+from src.collator import NONWESTLITDataCollator
 from src.dataset import NONWESTLITDataset
 
 
@@ -30,9 +31,10 @@ def main(model_name_or_path: str, data_path: str, num_labels: int = 3, batch_siz
     tokenizer, model = init_model(model_name_or_path, num_labels)
     model.transformer.requires_grad_(False)  # freeze the base transformer
     dataset = NONWESTLITDataset(data_path)
+    collator = NONWESTLITDataCollator(tokenizer=tokenizer)
     use_cpu = True if device == "cpu" else False
     training_args = TrainingArguments(output_dir="/home/devrim/lab/gh/nonwestlit/outputs", per_device_train_batch_size=batch_size, use_cpu=use_cpu, fp16=True)
-    trainer = Trainer(model=model, train_dataset=dataset, tokenizer=tokenizer, args=training_args)
+    trainer = Trainer(model=model, train_dataset=dataset, tokenizer=tokenizer, args=training_args, data_collator=collator)
     trainer.train()
 
 
