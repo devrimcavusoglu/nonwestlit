@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import fire
 from torch import nn
@@ -25,12 +25,13 @@ def train(data_loader: DataLoader, tokenizer, model: nn.Module):
         optimizer.zero_grad()
 
 
-def main(model_name_or_path: str, data_path: str, num_labels: int = 3, batch_size: int = 2):
+def main(model_name_or_path: str, data_path: str, num_labels: int = 3, batch_size: int = 2, device: Optional[str] = None):
     model: FalconForSequenceClassification
     tokenizer, model = init_model(model_name_or_path, num_labels)
     model.transformer.requires_grad_(False)  # freeze the base transformer
     dataset = NONWESTLITDataset(data_path)
-    training_args = TrainingArguments(output_dir="/home/devrim/lab/gh/nonwestlit/outputs", per_device_train_batch_size=batch_size, device=torch.device("cpu"))
+    device = device or "cpu"
+    training_args = TrainingArguments(output_dir="/home/devrim/lab/gh/nonwestlit/outputs", per_device_train_batch_size=batch_size, device=torch.device(device))
     trainer = Trainer(model=model, train_dataset=dataset, tokenizer=tokenizer, args=training_args)
     trainer.train()
 
