@@ -16,9 +16,11 @@ from nonwestlit.dataset import NONWESTLITDataset
 
 def init_model(model_name_or_path: str, num_labels: int, bnb_4bit: bool):
     if bnb_4bit:
-        warnings.warn("Setting `bnb_4bit` to False forcefully, as current interest is to fine-tune with "
-                      "a classification head. This feature and similar (e.g. LoRA) will be implemented to the "
-                      "codebase in the near future.")
+        warnings.warn(
+            "Setting `bnb_4bit` to False forcefully, as current interest is to fine-tune with "
+            "a classification head. This feature and similar (e.g. LoRA) will be implemented to the "
+            "codebase in the near future."
+        )
         quantization_cfg = None
         # quantization_cfg = BitsAndBytesConfig(
         #     load_in_4bit=True,
