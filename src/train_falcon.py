@@ -22,7 +22,7 @@ def init_model(model_name_or_path: str, num_labels: int):
     if tokenizer.pad_token is None:
         # Adding a new PAD token.
         # https://stackoverflow.com/a/73137031
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         model.resize_token_embeddings(len(tokenizer))
     return tokenizer, model
 
