@@ -10,11 +10,15 @@ dependencies:
   - python=3.10
   - pytorch=2.1.0
   - pip:
+    - accelerate==0.23.0
     - black==21.7b0
     - click==8.0.4
     - deepdiff==6.3.0
-    - transformers==4.34.0
     - fire
     - flake8==3.9.2
     - isort==5.9.2
     - notebook
+    - pytest==7.4.2
+    - pytest-cov>=3.0.0
+    - pytest-timeout>=2.1.0
+    - transformers==4.34.0
