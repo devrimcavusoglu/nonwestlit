@@ -1,4 +1,4 @@
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Union
 
 import fire
 from transformers import (
@@ -42,6 +42,7 @@ def train(
     half_precision_backend: Optional[str] = "auto",
     optim: Optional[str] = "adamw_torch",
     optim_args: Optional[Dict[str, Any]] = None,
+    deepspeed: Optional[Union[str, Dict]] = None,
 ):
     model: FalconForSequenceClassification
     tokenizer, model = init_model(model_name_or_path, num_labels)
@@ -69,7 +70,8 @@ def train(
         fp16=fp16,
         half_precision_backend=half_precision_backend,
         optim=optim,
-        optim_args=optim_args
+        optim_args=optim_args,
+        deepspeed=deepspeed
     )
     trainer = Trainer(
         model=model,
