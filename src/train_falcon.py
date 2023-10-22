@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional, Any, Dict, List
 
 import fire
 from transformers import (
@@ -37,10 +37,18 @@ def train(
     device: Optional[str] = None,
     output_dir: Optional[str] = None,
     freeze_base: bool = True,
+    bf16: Optional[bool] = False,
+    fp16: Optional[bool] = False,
+    half_precision_backend: Optional[str] = "auto",
+    optim: Optional[str] = "adamw_torch",
+    optim_args: Optional[Dict[str, Any]] = None,
 ):
     model: FalconForSequenceClassification
     tokenizer, model = init_model(model_name_or_path, num_labels)
     if freeze_base:
+        #  Without `freeze_base` it's nearly impossible to train the 7b vanilla model as it surpasses over 128 GiB
+        #  memory, with linear probing (freezing the entire backbone except the classification head) the memory use on
+        #  CPU is around 30 GiB.
         if "falcon" in model_name_or_path:
             # freeze the base/backbone transformer, `model.transformer` is specific to HF Falcon
             model.transformer.requires_grad_(False)
@@ -57,6 +65,11 @@ def train(
         metric_for_best_model="train_loss",
         greater_is_better=False,
         save_total_limit=1,
+        bf16=bf16,
+        fp16=fp16,
+        half_precision_backend=half_precision_backend,
+        optim=optim,
+        optim_args=optim_args
     )
     trainer = Trainer(
         model=model,
@@ -74,7 +87,7 @@ def predict(
     device: Optional[str] = None,
 ):
     """
-    Uses near 37 GB of memory on CPU.
+    Uses roughly 32 GiB of memory on CPU, peak is around 36 GiB.
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     pipe = pipeline("text-classification", model=model_name_or_path, tokenizer=tokenizer, device=device)
