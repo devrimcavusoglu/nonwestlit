@@ -1,6 +1,7 @@
 from typing import Optional, Any, Dict, List, Union
 
 import fire
+import torch
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -8,16 +9,26 @@ from transformers import (
     Trainer,
     TrainingArguments,
     pipeline,
+    BitsAndBytesConfig
 )
 
 from src.collator import NONWESTLITDataCollator
 from src.dataset import NONWESTLITDataset
 
 
-def init_model(model_name_or_path: str, num_labels: int):
+def init_model(model_name_or_path: str, num_labels: int, bnb_4bit: bool):
+    if bnb_4bit:
+        quantization_cfg = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+        )
+    else:
+        quantization_cfg = None
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     model = AutoModelForSequenceClassification.from_pretrained(
-        model_name_or_path, num_labels=num_labels
+        model_name_or_path, num_labels=num_labels, quantization_config=quantization_cfg
     )
     if tokenizer.pad_token is None:
         # Adding a new PAD token.
@@ -36,7 +47,8 @@ def train(
     n_epochs: int = 3,
     device: Optional[str] = None,
     output_dir: Optional[str] = None,
-    freeze_base: bool = True,
+    freeze_base: Optional[bool] = True,
+    bnb_4bit: Optional[bool] = False,
     bf16: Optional[bool] = False,
     fp16: Optional[bool] = False,
     half_precision_backend: Optional[str] = "auto",
@@ -45,7 +57,7 @@ def train(
     deepspeed: Optional[Union[str, Dict]] = None,
 ):
     model: FalconForSequenceClassification
-    tokenizer, model = init_model(model_name_or_path, num_labels)
+    tokenizer, model = init_model(model_name_or_path, num_labels, bnb_4bit=bnb_4bit)
     if freeze_base:
         #  Without `freeze_base` it's nearly impossible to train the 7b vanilla model as it surpasses over 128 GiB
         #  memory, with linear probing (freezing the entire backbone except the classification head) the memory use on
