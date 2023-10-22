@@ -1,15 +1,15 @@
-from typing import Optional, Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import fire
 import torch
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    BitsAndBytesConfig,
     FalconForSequenceClassification,
     Trainer,
     TrainingArguments,
     pipeline,
-    BitsAndBytesConfig
 )
 
 from src.collator import NONWESTLITDataCollator
@@ -19,10 +19,10 @@ from src.dataset import NONWESTLITDataset
 def init_model(model_name_or_path: str, num_labels: int, bnb_4bit: bool):
     if bnb_4bit:
         quantization_cfg = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.float16,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
         )
     else:
         quantization_cfg = None
@@ -83,7 +83,7 @@ def train(
         half_precision_backend=half_precision_backend,
         optim=optim,
         optim_args=optim_args,
-        deepspeed=deepspeed
+        deepspeed=deepspeed,
     )
     trainer = Trainer(
         model=model,
