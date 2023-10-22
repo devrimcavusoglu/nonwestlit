@@ -1,29 +1,31 @@
+import warnings
 from typing import Any, Dict, List, Optional, Union
 
-import fire
-import torch
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    BitsAndBytesConfig,
     FalconForSequenceClassification,
     Trainer,
     TrainingArguments,
     pipeline,
 )
 
-from src.collator import NONWESTLITDataCollator
-from src.dataset import NONWESTLITDataset
+from nonwestlit.collator import NONWESTLITDataCollator
+from nonwestlit.dataset import NONWESTLITDataset
 
 
 def init_model(model_name_or_path: str, num_labels: int, bnb_4bit: bool):
     if bnb_4bit:
-        quantization_cfg = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-        )
+        warnings.warn("Setting `bnb_4bit` to False forcefully, as current interest is to fine-tune with "
+                      "a classification head. This feature and similar (e.g. LoRA) will be implemented to the "
+                      "codebase in the near future.")
+        quantization_cfg = None
+        # quantization_cfg = BitsAndBytesConfig(
+        #     load_in_4bit=True,
+        #     bnb_4bit_compute_dtype=torch.float16,
+        #     bnb_4bit_quant_type="nf4",
+        #     bnb_4bit_use_double_quant=True,
+        # )
     else:
         quantization_cfg = None
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -107,7 +109,3 @@ def predict(
     pipe = pipeline("text-classification", model=model_name_or_path, tokenizer=tokenizer, device=device)
     out = pipe(inputs)
     return out
-
-
-if __name__ == "__main__":
-    fire.Fire({"train": train, "generate": predict})

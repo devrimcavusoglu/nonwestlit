@@ -2,7 +2,7 @@ from typing import Dict
 
 from torch.utils.data import Dataset
 
-from src.utils import read_json
+from nonwestlit.utils import read_json
 
 
 class NONWESTLITDataset(Dataset):

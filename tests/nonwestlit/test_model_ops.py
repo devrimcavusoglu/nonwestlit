@@ -2,8 +2,8 @@ import pytest
 from transformers import set_seed
 from transformers.trainer_utils import TrainOutput
 
-from src import OUTPUTS_DIR, TEST_DATA_DIR
-from src.train_falcon import predict, train
+from nonwestlit import OUTPUTS_DIR, TEST_DATA_DIR
+from nonwestlit.model_ops import predict, train
 from tests.utils import assert_almost_equal
 
 # No predefined pad_token in GPT2 and small model for test purposes.
