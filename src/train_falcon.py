@@ -1,7 +1,8 @@
 from typing import Optional
 
 import fire
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, FalconForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, \
+    FalconForSequenceClassification, LlamaForSequenceClassification, pipeline
 
 from src.collator import NONWESTLITDataCollator
 from src.dataset import NONWESTLITDataset
@@ -13,7 +14,7 @@ def init_model(model_name_or_path: str, num_labels: int):
     return tokenizer, model
 
 
-def main(
+def train(
         model_name_or_path: str,
         data_path: str,
         num_labels: int = 3,
@@ -49,5 +50,24 @@ def main(
     trainer.train()
 
 
+def generate(
+        model_name_or_path: str,
+        device: Optional[str] = None,
+):
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    pipe = pipeline(
+            "text-classification",
+            model=model_name_or_path,
+            tokenizer=tokenizer,
+            device=device
+    )
+    out = pipe("РЫБАчья ХижиНА нА. БЕРЕТАХЪ ПОРМАНДНИ.")
+    print(out)
+    return out
+
+
 if __name__ == "__main__":
-    fire.Fire(main)
+    fire.Fire({
+        "train": train,
+        "generate": generate
+    })

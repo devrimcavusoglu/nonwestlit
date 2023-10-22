@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any
 
 import torch
-from transformers import PreTrainedTokenizerBase, AutoTokenizer
+from transformers import PreTrainedTokenizerBase
 
 
 @dataclass
