@@ -22,7 +22,7 @@ class NONWESTLITDataCollator:
 
         for k, v in batch.items():
             if k == "labels":
-                batch[k] = torch.tensor(v).view(-1, 1)
+                batch[k] = torch.tensor(v)
                 continue
             batch[k] = torch.cat(v)
         return batch
