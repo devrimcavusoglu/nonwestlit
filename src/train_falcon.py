@@ -24,6 +24,7 @@ def init_model(model_name_or_path: str, num_labels: int):
         # https://stackoverflow.com/a/73137031
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         model.resize_token_embeddings(len(tokenizer))
+        model.config.pad_token_id = tokenizer.pad_token_id
     return tokenizer, model
 
 

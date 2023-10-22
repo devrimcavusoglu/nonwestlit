@@ -6,18 +6,19 @@ from src import OUTPUTS_DIR, TEST_DATA_DIR
 from src.train_falcon import predict, train
 from tests.utils import assert_almost_equal
 
-TEST_MODEL_NAME = "albert-base-v2"
+# No predefined pad_token in GPT2 and small model for test purposes.
+TEST_MODEL_NAME = "gpt2"
 _SEED = 42
 
 
 @pytest.fixture(scope="function")
 def expected_out_train():
-    return 0.5832080841064453
+    return 3.3881847858428955
 
 
 @pytest.fixture(scope="function")
 def expected_out_predict():
-    return [{"label": "LABEL_0", "score": 0.6958711743354797}]
+    return [{"label": "LABEL_0", "score": 0.9946860074996948}]
 
 
 def test_train(expected_out_train):
