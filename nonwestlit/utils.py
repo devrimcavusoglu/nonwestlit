@@ -1,4 +1,7 @@
 import json
+from typing import Optional
+
+Nullable = Optional  # Semantically separated nullable type hint for return types.
 
 
 def read_json(path: str):
