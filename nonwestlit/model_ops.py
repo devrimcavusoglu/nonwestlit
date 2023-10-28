@@ -2,7 +2,7 @@ import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
-from peft import LoraConfig
+from peft import LoraConfig, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -17,7 +17,7 @@ from transformers.utils import is_peft_available
 
 from nonwestlit.collator import NONWESTLITDataCollator
 from nonwestlit.dataset import NONWESTLITDataset
-from nonwestlit.utils import Nullable
+from nonwestlit.utils import Nullable, print_trainable_parameters
 
 
 def setup_bnb_quantization(bnb_quantization: Optional[str] = None) -> Nullable[BitsAndBytesConfig]:
@@ -41,6 +41,7 @@ def init_model(
     bnb_quantization: str,
     adapter: str,
     lora_target_modules: List[str],
+    gradient_checkpointing: bool,
 ) -> Tuple:
     model: PreTrainedModel
     quantization_cfg = setup_bnb_quantization(bnb_quantization)
@@ -50,6 +51,10 @@ def init_model(
         num_labels=num_labels,
         quantization_config=quantization_cfg,
     )
+    if bnb_quantization is not None:
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=gradient_checkpointing
+        )
     if adapter is not None:
         if not is_peft_available():
             raise EnvironmentError(
@@ -87,6 +92,7 @@ def train(
     quantization: Optional[str] = None,
     half_precision_backend: Optional[str] = "auto",
     optim: Optional[str] = "adamw_torch",
+    gradient_checkpointing: bool = True,
     optim_args: Optional[Dict[str, Any]] = None,
     deepspeed: Optional[Union[str, Dict]] = None,
 ):
@@ -100,6 +106,7 @@ def train(
         bnb_quantization=quantization,
         adapter=adapter,
         lora_target_modules=lora_target_modules,
+        gradient_checkpointing=gradient_checkpointing,
     )
     if freeze_backbone:
         if "falcon" in model_name_or_path and adapter is None:
@@ -109,6 +116,8 @@ def train(
             model: FalconForSequenceClassification
             # freeze the base/backbone transformer, `model.transformer` is specific to HF Falcon
             model.transformer.requires_grad_(False)
+
+    print_trainable_parameters(model)
     dataset = NONWESTLITDataset(data_path)
     collator = NONWESTLITDataCollator(tokenizer=tokenizer)
     training_args = TrainingArguments(
