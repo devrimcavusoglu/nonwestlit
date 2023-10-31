@@ -41,11 +41,7 @@ class NONWESTLITLoRADataCollator:
             )
             batch["input_ids"].append(tokenized_input["input_ids"])
             batch["attention_mask"].append(tokenized_input["attention_mask"])
-            batch["labels"].append(instance["labels"])
 
         for k, v in batch.items():
-            if k == "labels":
-                batch[k] = torch.tensor(v)
-                continue
             batch[k] = torch.cat(v)
         return batch

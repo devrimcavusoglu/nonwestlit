@@ -81,29 +81,44 @@ def init_model(
 def train(
     model_name_or_path: str,
     data_path: str,
-    num_labels: int = 3,
-    batch_size: int = 2,
-    n_epochs: int = 3,
-    device: Optional[str] = None,
-    output_dir: Optional[str] = None,
     freeze_backbone: Optional[bool] = True,
     adapter: Optional[str] = None,
     lora_target_modules: Optional[List[str]] = None,
-    quantization: Optional[str] = None,
-    half_precision_backend: Optional[str] = "auto",
-    optim: Optional[str] = "adamw_torch",
+    bnb_quantization: Optional[str] = None,
     gradient_checkpointing: bool = True,
-    optim_args: Optional[Dict[str, Any]] = None,
-    deepspeed: Optional[Union[str, Dict]] = None,
+    *,
+    task_type: str = "sequence-classification",
+    num_labels: int = None,
+    **kwargs
 ):
-    if quantization in ["4bit", "8bit"] and device.lower() == "cpu":
+    """
+    Main training function for the training of the base pretrained models.
+
+    Args:
+        model_name_or_path (str): Model name from the HF Hub or path.
+        data_path (str): Path to the dataset file.
+        freeze_backbone (bool):  If true, backbone transformer is frozen and only head is trained.
+            For training adapters, backbone is always frozen.
+        adapter (str): Adapter method (e.g. 'lora'). By default `None`.
+        lora_target_modules (List(str)): Target module names for the lora adapters to be trained on.
+        bnb_quantization (str): BitsAndBytes quantization type.
+        gradient_checkpointing (bool): If true, gradient checkpointing is used if applicable.
+        task_type (str): Task type of the training. Set as 'sequence-classification' by default.
+        kwargs: All keyword arguments for the :py:class:`TrainingArguments`.
+
+    Return:
+         (TrainingOutput) Training output metrics of the training.
+    """
+    if task_type == "sequence-classification" and num_labels is None:
+        raise TypeError("If `task_type` is 'sequence-classification', then `num_labels` parameter has to be passed.")
+    if bnb_quantization in ["4bit", "8bit"] and kwargs.get("use_cpu", False):
         warnings.warn(
-            "4 and 8 bit quantization is not supported on CPU, forcefully setting effective device to GPU."
+            "4 and 8 bit quantization is not supported on CPU, forcefully setting the effective device to GPU."
         )
     tokenizer, model = init_model(
         model_name_or_path,
         num_labels,
-        bnb_quantization=quantization,
+        bnb_quantization=bnb_quantization,
         adapter=adapter,
         lora_target_modules=lora_target_modules,
         gradient_checkpointing=gradient_checkpointing,
@@ -121,21 +136,8 @@ def train(
     dataset = NONWESTLITDataset(data_path)
     collator = NONWESTLITDataCollator(tokenizer=tokenizer)
     training_args = TrainingArguments(
-        output_dir=output_dir,
-        per_device_train_batch_size=batch_size,
-        use_cpu=device == "cpu",
         do_train=True,
-        save_strategy="epoch",
-        num_train_epochs=n_epochs,
-        metric_for_best_model="train_loss",
-        greater_is_better=False,
-        save_total_limit=1,
-        bf16=quantization == "bf16",
-        fp16=quantization == "fp16",
-        half_precision_backend=half_precision_backend,
-        optim=optim,
-        optim_args=optim_args,
-        deepspeed=deepspeed,
+        **kwargs
     )
     trainer = Trainer(
         model=model,
