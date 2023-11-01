@@ -1,7 +1,13 @@
 import json
+from enum import StrEnum
 from typing import Optional
 
 Nullable = Optional  # Semantically separated nullable type hint for return types.
+
+
+class TaskTypes(StrEnum):
+    seq_cls = "sequence-classification"
+    casual_lm = "causal-lm"
 
 
 def read_json(path: str):

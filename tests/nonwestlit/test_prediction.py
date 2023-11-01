@@ -1,7 +1,7 @@
 import pytest
 from transformers import set_seed
 
-from nonwestlit.model_ops import predict
+from nonwestlit.prediction import predict
 from tests.utils import assert_almost_equal
 
 
