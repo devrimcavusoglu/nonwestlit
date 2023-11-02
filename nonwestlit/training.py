@@ -16,11 +16,12 @@ from transformers import (
 )
 from transformers.utils import is_peft_available
 
-from nonwestlit.collator import NonwestlitSequenceClassificationDataCollator, NonwestlitCausalLMDataCollator
+from nonwestlit.collator import NonwestlitSequenceClassificationDataCollator, NonwestlitCausalLMDataCollator, \
+    NonwestlitPromptTuningDataCollator
 from nonwestlit.dataset import NONWESTLITDataset
 from nonwestlit.utils import Nullable, print_trainable_parameters, TaskTypes
 
-TASK_TO_LORA = {"causal-lm": "text-generation", "sequence-classification": "SEQ_CLS"}
+TASK_TO_LORA = {"causal-lm": "text-generation", "sequence-classification": "SEQ_CLS", "prompt-tuning": "text-generation"}
 
 
 def setup_bnb_quantization(bnb_quantization: Optional[str] = None) -> Nullable[BitsAndBytesConfig]:
@@ -76,7 +77,7 @@ def _construct_model(
             num_labels=num_labels,
             quantization_config=quantization_cfg,
         )
-    elif task_type == TaskTypes.casual_lm:
+    elif task_type in [TaskTypes.casual_lm, TaskTypes.prompt_tuning]:
         return AutoModelForCausalLM.from_pretrained(
             model_name_or_path, quantization_config=quantization_cfg
         )
@@ -94,7 +95,11 @@ def init_model(
 ) -> Tuple:
     model: PreTrainedModel
     quantization_cfg = setup_bnb_quantization(bnb_quantization)
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    if any(k in model_name_or_path for k in ("gpt", "opt", "bloom")):
+        padding_side = "left"
+    else:
+        padding_side = "right"
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, padding_side=padding_side)
     model = _construct_model(model_name_or_path, task_type, quantization_cfg, num_labels)
     if bnb_quantization is not None:
         model = prepare_model_for_kbit_training(
@@ -122,6 +127,8 @@ def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase):
         return NonwestlitSequenceClassificationDataCollator(tokenizer=tokenizer)
     elif task_type == TaskTypes.casual_lm:
         return NonwestlitCausalLMDataCollator(tokenizer)
+    elif task_type == TaskTypes.prompt_tuning:
+        return NonwestlitPromptTuningDataCollator(tokenizer)
 
 
 def train(

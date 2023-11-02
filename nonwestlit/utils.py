@@ -8,6 +8,7 @@ Nullable = Optional  # Semantically separated nullable type hint for return type
 class TaskTypes(StrEnum):
     seq_cls = "sequence-classification"
     casual_lm = "causal-lm"
+    prompt_tuning = "prompt-tuning"
 
 
 def read_json(path: str):
