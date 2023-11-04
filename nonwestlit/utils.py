@@ -1,11 +1,12 @@
 import json
+from configparser import ConfigParser
 from enum import StrEnum
 from typing import Optional
 
 Nullable = Optional  # Semantically separated nullable type hint for return types.
 
 
-class TaskTypes(StrEnum):
+class NonwestlitTaskTypes(StrEnum):
     seq_cls = "sequence-classification"
     casual_lm = "causal-lm"
     prompt_tuning = "prompt-tuning"
@@ -14,6 +15,12 @@ class TaskTypes(StrEnum):
 def read_json(path: str):
     with open(path, "r") as fd_in:
         return json.load(fd_in)
+
+
+def read_cfg(path: str) -> ConfigParser:
+    cfg = ConfigParser()
+    cfg.read(path)
+    return cfg
 
 
 def print_trainable_parameters(model):

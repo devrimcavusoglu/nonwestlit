@@ -17,6 +17,7 @@ dependencies:
     - fire
     - flake8==3.9.2
     - isort==5.9.2
+    - neptune==1.8.2
     - notebook
     - pytest==7.4.3
     - pytest-cov>=3.0.0

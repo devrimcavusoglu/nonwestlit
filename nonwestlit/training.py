@@ -1,8 +1,18 @@
+import os
 import warnings
 from typing import List, Optional, Tuple
 
 import torch
-from peft import LoraConfig, PeftConfig, prepare_model_for_kbit_training
+from peft import (
+    LoraConfig,
+    PeftConfig,
+    PeftModel,
+    PromptTuningConfig,
+    PromptTuningInit,
+    TaskType,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
@@ -11,17 +21,26 @@ from transformers import (
     FalconForSequenceClassification,
     LlamaForSequenceClassification,
     PreTrainedModel,
+    PreTrainedTokenizerBase,
     Trainer,
-    TrainingArguments, PreTrainedTokenizerBase,
+    TrainingArguments,
 )
 from transformers.utils import is_peft_available
 
-from nonwestlit.collator import NonwestlitSequenceClassificationDataCollator, NonwestlitCausalLMDataCollator, \
-    NonwestlitPromptTuningDataCollator
+from nonwestlit import NEPTUNE_CFG, PROJECT_ROOT
+from nonwestlit.collator import (
+    NonwestlitCausalLMDataCollator,
+    NonwestlitPromptTuningDataCollator,
+    NonwestlitSequenceClassificationDataCollator,
+)
 from nonwestlit.dataset import NONWESTLITDataset
-from nonwestlit.utils import Nullable, print_trainable_parameters, TaskTypes
+from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
 
-TASK_TO_LORA = {"causal-lm": "text-generation", "sequence-classification": "SEQ_CLS", "prompt-tuning": "text-generation"}
+TASK_TO_LORA = {
+    "causal-lm": TaskType.CAUSAL_LM,
+    "sequence-classification": TaskType.SEQ_CLS,
+    "prompt-tuning": TaskType.CAUSAL_LM,
+}
 
 
 def setup_bnb_quantization(bnb_quantization: Optional[str] = None) -> Nullable[BitsAndBytesConfig]:
@@ -53,7 +72,9 @@ def _freeze_backbone(model: PreTrainedModel) -> None:
         model.model.requires_grad_(False)
 
 
-def _get_adapter_config(adapter: str, target_modules: List[str], task_type: str) -> PeftConfig:
+def _get_adapter_config(
+    adapter: str, target_modules: List[str], task_type: str, model_name_or_path: Optional[str] = None
+) -> PeftConfig:
     if not is_peft_available():
         raise EnvironmentError(
             "Training w/ Lora requires the package `peft`. Install it by `pip install peft`."
@@ -66,18 +87,26 @@ def _get_adapter_config(adapter: str, target_modules: List[str], task_type: str)
             target_modules=target_modules,
             task_type=TASK_TO_LORA[task_type],
         )
+    elif adapter == "prompt-tuning":
+        return PromptTuningConfig(
+            prompt_tuning_init=PromptTuningInit.TEXT,
+            prompt_tuning_init_text="Classify if the article belong to a type of literary text, cultural discourse or other:",
+            tokenizer_name_or_path=model_name_or_path,
+            num_virtual_tokens=8,
+            task_type=TASK_TO_LORA[task_type],
+        )
 
 
 def _construct_model(
     model_name_or_path: str, task_type: str, quantization_cfg, num_labels: int
 ) -> PreTrainedModel:
-    if task_type == TaskTypes.seq_cls:
+    if task_type == NonwestlitTaskTypes.seq_cls:
         return AutoModelForSequenceClassification.from_pretrained(
             model_name_or_path,
             num_labels=num_labels,
             quantization_config=quantization_cfg,
         )
-    elif task_type in [TaskTypes.casual_lm, TaskTypes.prompt_tuning]:
+    elif task_type in [NonwestlitTaskTypes.casual_lm, NonwestlitTaskTypes.prompt_tuning]:
         return AutoModelForCausalLM.from_pretrained(
             model_name_or_path, quantization_config=quantization_cfg
         )
@@ -106,9 +135,8 @@ def init_model(
             model, use_gradient_checkpointing=gradient_checkpointing
         )
     if adapter is not None:
-        peft_cfg = _get_adapter_config(adapter, lora_target_modules, task_type)
-        if peft_cfg is not None:
-            model.add_adapter(peft_cfg)
+        peft_cfg = _get_adapter_config(adapter, lora_target_modules, task_type, model_name_or_path)
+        model: PeftModel = get_peft_model(model, peft_cfg)
     elif freeze_backbone:
         _freeze_backbone(model)
 
@@ -122,34 +150,52 @@ def init_model(
     return tokenizer, model
 
 
-def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase):
-    if task_type == TaskTypes.seq_cls:
-        return NonwestlitSequenceClassificationDataCollator(tokenizer=tokenizer)
-    elif task_type == TaskTypes.casual_lm:
+def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase, num_virtual_tokens: int):
+    if task_type == NonwestlitTaskTypes.seq_cls:
+        return NonwestlitSequenceClassificationDataCollator(tokenizer)
+    elif task_type == NonwestlitTaskTypes.casual_lm:
         return NonwestlitCausalLMDataCollator(tokenizer)
-    elif task_type == TaskTypes.prompt_tuning:
-        return NonwestlitPromptTuningDataCollator(tokenizer)
+    elif task_type == NonwestlitTaskTypes.prompt_tuning:
+        return NonwestlitPromptTuningDataCollator(tokenizer, num_virtual_tokens)
+
+
+def _check_neptune_creds():
+    if os.getenv("NEPTUNE_PROJECT") is not None and os.getenv("NEPTUNE_API_TOKEN") is not None:
+        return
+    elif NEPTUNE_CFG.exists():
+        cfg = read_cfg(NEPTUNE_CFG.as_posix())
+        neptune_project = cfg["credentials"]["project"]
+        neptune_token = cfg["credentials"]["api_token"]
+        assert neptune_project is not None and neptune_token is not None
+        # set as environment variables
+        os.environ["NEPTUNE_PROJECT"] = neptune_project
+        os.environ["NEPTUNE_API_TOKEN"] = neptune_token
+        return
+    raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
 
 
 def train(
     model_name_or_path: str,
-    data_path: str,
     output_dir: str,
+    train_data_path: str,
+    eval_data_path: Optional[str] = None,
     freeze_backbone: Optional[bool] = True,
     adapter: Optional[str] = None,
     lora_target_modules: Optional[List[str]] = None,
     bnb_quantization: Optional[str] = None,
     gradient_checkpointing: bool = True,
     task_type: str = "sequence-classification",
-    **kwargs
+    experiment_tracking: bool = True,
+    **kwargs,
 ):
     """
     Main training function for the training of the base pretrained models.
 
     Args:
         model_name_or_path (str): Model name from the HF Hub or path.
-        data_path (str): Path to the dataset file.
         output_dir (str): Path to a directory where the model directory is saved under.
+        train_data_path (str): Path to the training dataset file.
+        eval_data_path (str): Path to the evaluation dataset file.
         freeze_backbone (bool):  If true, backbone transformer is frozen and only head is trained.
             For training adapters, backbone is always frozen.
         adapter (str): Adapter method (e.g. 'lora'). By default `None`.
@@ -157,6 +203,7 @@ def train(
         bnb_quantization (str): BitsAndBytes quantization type.
         gradient_checkpointing (bool): If true, gradient checkpointing is used if applicable.
         task_type (str): Task type of the training. Set as 'sequence-classification' by default.
+        experiment_tracking (bool): If true, the experiment logs are reported to Neptune.
         kwargs: All keyword arguments for the :py:class:`TrainingArguments`. To see the supported arguments, see
             the documentation below.
             https://huggingface.co/docs/transformers/v4.34.1/en/main_classes/trainer#transformers.TrainingArguments
@@ -164,10 +211,13 @@ def train(
     Return:
          (TrainingOutput) Training output metrics of the training.
     """
-    if "num_labels" in kwargs:
-        num_labels = kwargs.pop("num_labels")
+    num_labels = kwargs.pop("num_labels") if "num_labels" in kwargs else None
+    num_virtual_tokens = kwargs.pop("num_virtual_tokens") if "num_virtual_tokens" in kwargs else None
+    if experiment_tracking:
+        _check_neptune_creds()
+        report_to = "neptune"
     else:
-        num_labels = None
+        report_to = "none"
     if task_type == "sequence-classification" and num_labels is None:
         raise TypeError(
             "If `task_type` is 'sequence-classification', then `num_labels` parameter has to be passed."
@@ -175,6 +225,18 @@ def train(
     elif task_type == "causal-lm" and num_labels is not None:
         warnings.warn(
             "Parameters 'num_labels' is passed, but task_type is 'causal-lm'. 'num_labels' will be igonred."
+        )
+
+    if adapter == NonwestlitTaskTypes.prompt_tuning and num_virtual_tokens is None:
+        raise ValueError(
+            "If the adapter/task is prompt tuning, parameter `num_virtual_tokens` has to be passed."
+        )
+    elif (
+        adapter == NonwestlitTaskTypes.prompt_tuning and task_type != NonwestlitTaskTypes.prompt_tuning
+    ):
+        raise ValueError(
+            f"Adapter is set to prompt-tuning, but got `task_type={task_type}`. For prompt-tuning, both "
+            f"adapter and the task_type must be {adapter}."
         )
 
     if bnb_quantization in ["4bit", "8bit"] and kwargs.get("use_cpu", False):
@@ -192,13 +254,20 @@ def train(
         task_type=task_type,
     )
 
-    print_trainable_parameters(model)
-    dataset = NONWESTLITDataset(data_path)
-    collator = _get_collator(task_type, tokenizer)
-    training_args = TrainingArguments(output_dir=output_dir, do_train=True, **kwargs)
+    if isinstance(model, PeftModel):
+        model.print_trainable_parameters()
+    else:
+        print_trainable_parameters(model)
+    train_dataset = NONWESTLITDataset(train_data_path)
+    eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
+    collator = _get_collator(task_type, tokenizer, num_virtual_tokens)
+    training_args = TrainingArguments(
+        output_dir=output_dir, do_train=True, report_to=report_to, **kwargs
+    )
     trainer = Trainer(
         model=model,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         args=training_args,
         data_collator=collator,
