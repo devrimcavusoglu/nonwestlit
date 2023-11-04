@@ -30,6 +30,16 @@ Activate the created conda environment by `conda activate nonwestlit`.
 
 Also, add the project root directory to PYTHONPATH to develop more smoothly without experiencing any path related problems. For earlier `conda` versions this was possible by `conda develop <project root dir>`, but it is [deprecated](https://github.com/conda/conda-build/issues/4251) (idk why?), so you can choose to manually add it to the PYTHONPATH. Heads up, this may require installing `conda-build` with miniconda.
 
+An alternative way to add the project root to the PYTHONPATH permanently for the environment, try the following:
+
+1. Go to your conda dist. path (e.g. anaconda3, miniconda3, mamba) usually located at `$HOME/anaconda3`, from now on this path is referred as `CONDA_ROOT`
+2. Find the activation bash file located at `CONDA_ROOT/etc/conda/activate.d`, the file name under this is `libxml2_activate.sh` for conda version `4.14.0` (could be different for future versions).
+3. Open the file and add the following line and save and close it.
+    ```shell
+    export PYTHONPATH="${PYTHONPATH}:/path/to/project/root"
+    ```
+4. Deactivate and reactivate the environment `nonwestlit`. The project root is now permanently added to PYTHONPATH.
+
 ## Usage
 
 You can start training by the following command at the project root.

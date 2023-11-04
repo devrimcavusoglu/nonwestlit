@@ -22,4 +22,4 @@ dependencies:
     - pytest==7.4.3
     - pytest-cov>=3.0.0
     - pytest-timeout>=2.1.0
-    - transformers @ git+https://github.com/huggingface/transformers.git@113ebf80ac9bdb74037239847cd906d7ea986a18
+    - transformers==4.35.0
