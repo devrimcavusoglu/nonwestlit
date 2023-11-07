@@ -1,3 +1,6 @@
+import platform
+import sys
+
 import pytest
 from transformers import set_seed
 from transformers.trainer_utils import TrainOutput
@@ -14,21 +17,29 @@ def expected_out_train():
 
 @pytest.fixture(scope="function")
 def expected_out_sequence_classifier_lora():
+    if sys.platform == "win32":
+        return 8.669189453125
     return 9.0419921875
 
 
 @pytest.fixture(scope="function")
 def expected_out_sequence_classifier_lora_4bit():
+    if sys.platform == "win32":
+        return 0.02534000761806965
     return 0.0016488938126713037
 
 
 @pytest.fixture(scope="function")
 def expected_out_causal_lm_lora_4bit():
+    if sys.platform == "win32":
+        return 65.33915710449219
     return 68.3405532836914
 
 
 @pytest.fixture(scope="function")
 def expected_out_prompt_tuning_lora_4bit():
+    if sys.platform == "win32":
+        return 67.76924896240234
     return 70.93326568603516
 
 

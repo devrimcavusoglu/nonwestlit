@@ -1,18 +1,9 @@
 import os
 import warnings
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
+import numpy as np
 import torch
-from peft import (
-    LoraConfig,
-    PeftConfig,
-    PeftModel,
-    PromptTuningConfig,
-    PromptTuningInit,
-    TaskType,
-    get_peft_model,
-    prepare_model_for_kbit_training,
-)
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
@@ -23,11 +14,11 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizerBase,
     Trainer,
-    TrainingArguments,
+    TrainingArguments, EvalPrediction,
 )
 from transformers.utils import is_peft_available
 
-from nonwestlit import NEPTUNE_CFG, PROJECT_ROOT
+from nonwestlit import NEPTUNE_CFG
 from nonwestlit.collator import (
     NonwestlitCausalLMDataCollator,
     NonwestlitPromptTuningDataCollator,
@@ -36,11 +27,23 @@ from nonwestlit.collator import (
 from nonwestlit.dataset import NONWESTLITDataset
 from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
 
-TASK_TO_LORA = {
-    "causal-lm": TaskType.CAUSAL_LM,
-    "sequence-classification": TaskType.SEQ_CLS,
-    "prompt-tuning": TaskType.CAUSAL_LM,
-}
+if is_peft_available():
+    from peft import (
+        LoraConfig,
+        PeftConfig,
+        PeftModel,
+        PromptTuningConfig,
+        PromptTuningInit,
+        TaskType,
+        get_peft_model,
+        prepare_model_for_kbit_training,
+    )
+
+    TASK_TO_LORA = {
+        "causal-lm": TaskType.CAUSAL_LM,
+        "sequence-classification": TaskType.SEQ_CLS,
+        "prompt-tuning": TaskType.CAUSAL_LM,
+    }
 
 
 def setup_bnb_quantization(bnb_quantization: Optional[str] = None) -> Nullable[BitsAndBytesConfig]:
@@ -174,6 +177,28 @@ def _check_neptune_creds():
     raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
 
 
+def data_evaluation(input_data: EvalPrediction) -> Dict[str, Any]:
+    pred_cls = input_data.predictions.argmax(-1)
+    metrics = {}
+    metrics["val_accuracy"] = sum(pred_cls == input_data.label_ids) / len(pred_cls)
+    for i in range(3):  # num_classes
+        hits = sum(np.where(pred_cls == i, 1, 0) == np.where(input_data.label_ids == i, 1, -1))
+        if sum(pred_cls == i) != 0:
+            metrics[f"val_precision_{i}"] = hits / sum(pred_cls == i)
+        else:
+            metrics[f"val_precision_{i}"] = 0
+        if sum(input_data.label_ids == i) != 0:
+            metrics[f"val_recall_{i}"] = hits / sum(input_data.label_ids == i)
+        else:
+            metrics[f"val_recall_{i}"] = 0
+        if metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"] != 0:
+            metrics[f"val_f1_{i}"] = 2 * metrics[f"val_precision_{i}"] * metrics[f"val_recall_{i}"] / (metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"])
+        else:
+            metrics[f"val_f1_{i}"] = 0
+    metrics["val_f1_macro"] = (metrics["val_f1_0"] + metrics["val_f1_1"] + metrics["val_f1_2"]) / 3
+    return metrics
+
+
 def train(
     model_name_or_path: str,
     output_dir: str,
@@ -260,6 +285,9 @@ def train(
         print_trainable_parameters(model)
     train_dataset = NONWESTLITDataset(train_data_path)
     eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
+    if "evaluation_strategy" not in kwargs and eval_data_path is not None:
+        kwargs["evaluation_strategy"] = "steps"
+    compute_metrics = data_evaluation if task_type == NonwestlitTaskTypes.seq_cls else None
     collator = _get_collator(task_type, tokenizer, num_virtual_tokens)
     training_args = TrainingArguments(
         output_dir=output_dir, do_train=True, report_to=report_to, **kwargs
@@ -271,5 +299,6 @@ def train(
         tokenizer=tokenizer,
         args=training_args,
         data_collator=collator,
+        compute_metrics=compute_metrics
     )
     return trainer.train()
