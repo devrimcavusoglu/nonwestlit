@@ -7,7 +7,7 @@ channels:
 dependencies:
   - pytorch-cuda=12.1
   - pip
-  - python=3.10
+  - python=3.11
   - pytorch=2.1.0
   - pip:
     - accelerate==0.23.0
@@ -17,8 +17,9 @@ dependencies:
     - fire
     - flake8==3.9.2
     - isort==5.9.2
+    - neptune==1.8.2
     - notebook
-    - pytest==7.4.2
+    - pytest==7.4.3
     - pytest-cov>=3.0.0
     - pytest-timeout>=2.1.0
-    - transformers==4.34.0
+    - transformers==4.35.0
