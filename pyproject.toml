@@ -18,3 +18,4 @@ timeout = 400
 timeout_method = "thread"
 testpaths = "tests"
 addopts = "-vvv"
+tmp_path_retention_policy = "failed"
