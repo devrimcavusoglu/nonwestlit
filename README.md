@@ -33,7 +33,7 @@ Also, add the project root directory to PYTHONPATH to develop more smoothly with
 An alternative way to add the project root to the PYTHONPATH permanently for the environment, try the following:
 
 1. Go to your conda dist. path (e.g. anaconda3, miniconda3, mamba) usually located at `$HOME/anaconda3`, from now on this path is referred as `CONDA_ROOT`
-2. Find the activation bash file located at `CONDA_ROOT/etc/conda/activate.d`, the file name under this is `libxml2_activate.sh` for conda version `4.14.0` (could be different for future versions).
+2. Find the activation bash file located at `CONDA_ROOT/envs/nonwestlit/etc/conda/activate.d`, the file name under this is `libxml2_activate.sh` for conda version `4.14.0` (could be different for future versions).
 3. Open the file and add the following line and save and close it.
     ```shell
     export PYTHONPATH="${PYTHONPATH}:/path/to/project/root"
@@ -42,10 +42,16 @@ An alternative way to add the project root to the PYTHONPATH permanently for the
 
 ## Usage
 
-You can start training by the following command at the project root.
+❗**Important Note:** The terminal commands given below are only for demonstration purposes, and may not represent all 
+capability of the train arguments. The entry point `nonwestlit train` seamlessly support all HF TrainingArguments, 
+just pass by the exact name and correct value. Please refer to [TrainingArguments](https://huggingface.co/docs/transformers/main_classes/trainer#transformers.TrainingArguments)
+to see all supported arguments for training.
+
+You can start training by the following command at the project root. The following example training command was used 
+for training [nonwestlit/falcon-7b-lora-seq-cls](https://huggingface.co/nonwestlit/falcon-7b-lora-seq-cls).
 
 ```shell
-python nonwestlit train --model-name-or-path gpt2 --data-path test_data/toy_dataset.json --device cpu --output-dir outputs --bf16 1
+python nonwestlit train --model-name-or-path tiiuae/falcon-7b --train-data-path data/data-json/train.json --eval-data-path data/data-json/val.json --output-dir outputs/falcon_7b_lora_seq_cls --adapter lora --lora-target-modules ["query_key_value"] --bnb-quantization 4bit --experiment-tracking 1 --num-labels 3 --save-strategy steps --save-steps 0.141 --save-total-limit 1 --per-device-train-batch-size 2 --weight-decay 0.1 --learning-rate 0.00003 --eval-steps 0.047 --bf16 1 --logging-steps 1 --num-train-epochs 7
 ```
 
 The help docs/docstrings are not there yet, it will soon be ready.
@@ -61,6 +67,29 @@ GPT-2 is used for test purposes, so no harm trying the commands above (you will 
 **Deepspeed**
 
 It's currently experimental, and it's not tested yet. You can only use w/ GPU's having Ampere arch. (RTX 3000 series+ or workstation GPUs). I didn't perform training with it, but it seems promising.
+
+### Pushing the model to HF Hub
+
+Use the following command to push your trained model to the huggingface-hub.
+
+❗**Heads Up:** Before pushing the model to HF Hub you may want to remove the optimizer file saved along with the model, 
+usually the optimizer binary files for big LLMs (e.g. llama-2, falcon) would be around 3 GB, and thus significantly 
+slows down the uploading phase. Afaik, there is no way of certain ignoring files for huggingface-cli, so you have to 
+either remove the optimizer file or move it outside the model directory.
+
+```shell
+  huggingface-cli upload nonwestlit LOCAL_MODEL_DIR HF_REPO_OR_MODEL_NAME --private --repo-type model
+```
+
+### Experiment Tracking
+
+We are using Neptune.ai as an experiment tracking tool. To start logging neptune you need to create a simple config file as below, and name it `neptune.cfg` which must reside under the project root. Enter values without any quotation marks (shown in the example below).
+
+```cfg
+[credentials]
+project=<PROJECT_NAME>  # e.g. nonwestlit/text-type-classification
+api_token=<YOUR_NEPTUNE_TOKEN>
+```
 
 ## Development
 
