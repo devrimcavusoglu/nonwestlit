@@ -153,13 +153,13 @@ def init_model(
     return tokenizer, model
 
 
-def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase, num_virtual_tokens: int):
+def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase, num_virtual_tokens: int, max_sequence_length: int):
     if task_type == NonwestlitTaskTypes.seq_cls:
-        return NonwestlitSequenceClassificationDataCollator(tokenizer)
+        return NonwestlitSequenceClassificationDataCollator(tokenizer, max_sequence_length)
     elif task_type == NonwestlitTaskTypes.casual_lm:
-        return NonwestlitCausalLMDataCollator(tokenizer)
+        return NonwestlitCausalLMDataCollator(tokenizer, max_sequence_length)
     elif task_type == NonwestlitTaskTypes.prompt_tuning:
-        return NonwestlitPromptTuningDataCollator(tokenizer, num_virtual_tokens)
+        return NonwestlitPromptTuningDataCollator(tokenizer, num_virtual_tokens, max_sequence_length)
 
 
 def _check_neptune_creds():
@@ -211,6 +211,7 @@ def train(
     gradient_checkpointing: bool = True,
     task_type: str = "sequence-classification",
     experiment_tracking: bool = True,
+    max_sequence_length: Optional[int] = None,
     **kwargs,
 ):
     """
@@ -220,15 +221,17 @@ def train(
         model_name_or_path (str): Model name from the HF Hub or path.
         output_dir (str): Path to a directory where the model directory is saved under.
         train_data_path (str): Path to the training dataset file.
-        eval_data_path (str): Path to the evaluation dataset file.
-        freeze_backbone (bool):  If true, backbone transformer is frozen and only head is trained.
+        eval_data_path (Optional(str)): Path to the evaluation dataset file.
+        freeze_backbone (Optional(bool)):  If true, backbone transformer is frozen and only head is trained.
             For training adapters, backbone is always frozen.
-        adapter (str): Adapter method (e.g. 'lora'). By default `None`.
-        lora_target_modules (List(str)): Target module names for the lora adapters to be trained on.
-        bnb_quantization (str): BitsAndBytes quantization type.
+        adapter (Optional(str)): Adapter method (e.g. 'lora'). By default `None`.
+        lora_target_modules (Optional(List(str))): Target module names for the lora adapters to be trained on.
+        bnb_quantization (Optional(str)): BitsAndBytes quantization type.
         gradient_checkpointing (bool): If true, gradient checkpointing is used if applicable.
         task_type (str): Task type of the training. Set as 'sequence-classification' by default.
         experiment_tracking (bool): If true, the experiment logs are reported to Neptune.
+        max_sequence_length (int): Maximum sequence length for input tokens to be truncated. If None, truncates to the
+            longest input seq by default.
         kwargs: All keyword arguments for the :py:class:`TrainingArguments`. To see the supported arguments, see
             the documentation below.
             https://huggingface.co/docs/transformers/v4.34.1/en/main_classes/trainer#transformers.TrainingArguments
@@ -288,7 +291,7 @@ def train(
     if "evaluation_strategy" not in kwargs and eval_data_path is not None:
         kwargs["evaluation_strategy"] = "steps"
     compute_metrics = data_evaluation if task_type == NonwestlitTaskTypes.seq_cls else None
-    collator = _get_collator(task_type, tokenizer, num_virtual_tokens)
+    collator = _get_collator(task_type, tokenizer, num_virtual_tokens, max_sequence_length)
     training_args = TrainingArguments(
         output_dir=output_dir, do_train=True, report_to=report_to, **kwargs
     )

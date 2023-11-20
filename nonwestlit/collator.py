@@ -27,6 +27,7 @@ class NonwestlitCausalLMDataCollator:
     """
 
     tokenizer: PreTrainedTokenizerBase
+    max_sequence_length: int = None
     return_tensors: str = "pt"
 
     def __call__(self, features: List[Dict[str, Any]]) -> BatchEncoding:
@@ -59,6 +60,7 @@ class NonwestlitPromptTuningDataCollator:
 
     tokenizer: PreTrainedTokenizerBase
     num_virtual_tokens: int
+    max_sequence_length: int = None
     return_tensors: str = "pt"
 
     def __call__(self, features: List[Dict[str, Any]]) -> BatchEncoding:
@@ -91,13 +93,14 @@ class NonwestlitSequenceClassificationDataCollator:
     """
 
     tokenizer: PreTrainedTokenizerBase
+    max_sequence_length: int = None
     return_tensors: str = "pt"
 
     def __call__(self, features: List[Dict[str, Any]]) -> BatchEncoding:
         inputs = [instance["input_ids"] for instance in features]
         labels = [instance["labels"] for instance in features]
         model_inputs = self.tokenizer(
-            inputs, truncation=True, return_tensors=self.return_tensors, padding=True
+            inputs, truncation=True, return_tensors=self.return_tensors, padding=True, model_max_length=self.max_sequence_length
         )
         model_inputs["labels"] = torch.tensor(labels)
         return model_inputs
