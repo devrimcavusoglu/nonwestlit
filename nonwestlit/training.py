@@ -2,8 +2,10 @@ import os
 import warnings
 from typing import List, Optional, Tuple, Dict, Any
 
+import datasets
 import numpy as np
 import torch
+from datasets import Dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
@@ -153,13 +155,13 @@ def init_model(
     return tokenizer, model
 
 
-def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase, num_virtual_tokens: int, max_sequence_length: int):
+def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase, num_virtual_tokens: int, max_sequence_length: int, is_mapping: bool):
     if task_type == NonwestlitTaskTypes.seq_cls:
-        return NonwestlitSequenceClassificationDataCollator(tokenizer, max_sequence_length)
+        return NonwestlitSequenceClassificationDataCollator(tokenizer, max_sequence_length, is_mapping=is_mapping)
     elif task_type == NonwestlitTaskTypes.casual_lm:
-        return NonwestlitCausalLMDataCollator(tokenizer, max_sequence_length)
+        return NonwestlitCausalLMDataCollator(tokenizer, max_sequence_length, is_mapping=is_mapping)
     elif task_type == NonwestlitTaskTypes.prompt_tuning:
-        return NonwestlitPromptTuningDataCollator(tokenizer, num_virtual_tokens, max_sequence_length)
+        return NonwestlitPromptTuningDataCollator(tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=is_mapping)
 
 
 def _check_neptune_creds():
@@ -204,6 +206,7 @@ def train(
     output_dir: str,
     train_data_path: str,
     eval_data_path: Optional[str] = None,
+    dataset_framework: Optional[str] = "hf",
     freeze_backbone: Optional[bool] = True,
     adapter: Optional[str] = None,
     lora_target_modules: Optional[List[str]] = None,
@@ -222,6 +225,7 @@ def train(
         output_dir (str): Path to a directory where the model directory is saved under.
         train_data_path (str): Path to the training dataset file.
         eval_data_path (Optional(str)): Path to the evaluation dataset file.
+        dataset_framework (Optional(str): Framework for dataset to be used. Valid choices: [hf, torch].
         freeze_backbone (Optional(bool)):  If true, backbone transformer is frozen and only head is trained.
             For training adapters, backbone is always frozen.
         adapter (Optional(str)): Adapter method (e.g. 'lora'). By default `None`.
@@ -271,6 +275,7 @@ def train(
         warnings.warn(
             "4 and 8 bit quantization is not supported on CPU, forcefully setting the effective device to GPU."
         )
+
     tokenizer, model = init_model(
         model_name_or_path,
         num_labels,
@@ -281,17 +286,29 @@ def train(
         freeze_backbone=freeze_backbone,
         task_type=task_type,
     )
+    max_sequence_length = max_sequence_length or tokenizer.model_max_length
 
     if isinstance(model, PeftModel):
         model.print_trainable_parameters()
     else:
         print_trainable_parameters(model)
-    train_dataset = NONWESTLITDataset(train_data_path)
-    eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
+    if dataset_framework == "torch":
+        collator = _get_collator(task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=False)
+        train_dataset = NONWESTLITDataset(train_data_path)
+        eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
+    elif dataset_framework == "hf":
+        d = datasets.load_dataset(train_data_path, tokenizer=tokenizer, max_sequence_length=max_sequence_length)
+        train_dataset = d["train"]
+        eval_dataset = d["validation"] if eval_data_path is not None else None
+        collator = _get_collator(task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True)
+        train_dataset = train_dataset.map(collator)
+        eval_dataset = eval_dataset.map(collator)
+        collator = None  # No need for collator to be used, we utilized mapping which is faster.
+    else:
+        raise ValueError(f"Only valid choices for 'dataset_framework' argument are [hf,torch], got {dataset_framework}")
     if "evaluation_strategy" not in kwargs and eval_data_path is not None:
         kwargs["evaluation_strategy"] = "steps"
     compute_metrics = data_evaluation if task_type == NonwestlitTaskTypes.seq_cls else None
-    collator = _get_collator(task_type, tokenizer, num_virtual_tokens, max_sequence_length)
     training_args = TrainingArguments(
         output_dir=output_dir, do_train=True, report_to=report_to, **kwargs
     )
