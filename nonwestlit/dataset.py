@@ -10,6 +10,13 @@ class NONWESTLITDataset(Dataset):
         super().__init__(**kwargs)
         self.data_path = data_path
         self._dataset = read_json(data_path)
+        self.__current_id = 1
+
+    @property
+    def __next_id(self):
+        cid = self.__current_id
+        self.__current_id += 1
+        return cid
 
     def __getitem__(self, subscript):
         if isinstance(subscript, slice):
@@ -28,9 +35,11 @@ class NONWESTLITDataset(Dataset):
 
     def get_item(self, index: int) -> Dict:
         instance = self._dataset[index]
+        iid = instance.get("id", self.__next_id)
+        label = instance.get("label") or instance.get("text_type")
         return dict(
-            iid=instance["id"],
+            iid=iid,
             title=instance["title"],
             input_ids=instance["article"],
-            labels=int(instance["text_type"]) - 1,  # text_type index start from 1
+            labels=int(label) - 1,  # text_type index start from 1
         )
