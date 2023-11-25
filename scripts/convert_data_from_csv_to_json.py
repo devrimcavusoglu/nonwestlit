@@ -6,7 +6,9 @@ import pandas as pd
 
 def create_args():
     parser = ArgumentParser(prog="data converter", description="CSV to JSON converter")
-    parser.add_argument("input_dir", type=str, help="Path to the input directory containing dataset files.")
+    parser.add_argument(
+        "input_dir", type=str, help="Path to the input directory containing dataset files."
+    )
     parser.add_argument("output_dir", type=str, help="Path to the output directory.")
     return parser.parse_args()
 
@@ -22,7 +24,7 @@ def main(args):
         data["id"] = list(range(1, len(data) + 1))
         data["text_type"] = data["label"].astype(int)
         data.drop("label", axis=1, inplace=True)
-        with open(output_path / f"{split.stem}.json", 'w', encoding='utf-8') as file:
+        with open(output_path / f"{split.stem}.json", "w", encoding="utf-8") as file:
             data.to_json(file, orient="records", force_ascii=False)
 
 

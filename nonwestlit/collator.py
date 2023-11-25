@@ -42,11 +42,17 @@ class NonwestlitBaseDataCollator(ABC):
     def _tokenize(self, inputs: List[str]) -> BatchEncoding:
         return_tensors = None if self.is_mapping else "pt"
         return self.tokenizer(
-            inputs, truncation=True, return_tensors=return_tensors, padding=True,
-            max_length=self.max_sequence_length, return_overflowing_tokens=False,
+            inputs,
+            truncation=True,
+            return_tensors=return_tensors,
+            padding=True,
+            max_length=self.max_sequence_length,
+            return_overflowing_tokens=False,
         )
 
-    def preprocess_inputs(self, features: List[Dict[str, Any]]) -> Tuple[List[str], Nullable[List[int]]]:
+    def preprocess_inputs(
+        self, features: List[Dict[str, Any]]
+    ) -> Tuple[List[str], Nullable[List[int]]]:
         """Preprocess given inputs"""
         if not self.is_mapping:
             inputs = [instance["input_ids"] for instance in features]
@@ -104,13 +110,16 @@ class NonwestlitPromptTuningDataCollator(NonwestlitBaseDataCollator):
         tokenizer (PreTrainedTokenizerBase): Tokenizer object for the handling of the inputs.
         num_virtual_tokens (int): Number of virtual tokens for PromptTuning method.
     """
+
     num_virtual_tokens: int = None
 
     def _tokenize(self, inputs: List[str]) -> BatchEncoding:
         if self.max_sequence_length is not None:
             self.max_sequence_length -= self.num_virtual_tokens
 
-    def preprocess_inputs(self, features: List[Dict[str, Any]]) -> Tuple[List[str], Nullable[List[int]]]:
+    def preprocess_inputs(
+        self, features: List[Dict[str, Any]]
+    ) -> Tuple[List[str], Nullable[List[int]]]:
         inputs = [
             f"""INPUT_TEXT: {instance['input_ids']} LABEL: {NonwestlitArticleTypes[f'cat_{instance["labels"]}']}"""
             for instance in features

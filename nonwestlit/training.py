@@ -1,23 +1,26 @@
 import os
 import warnings
-from typing import List, Optional, Tuple, Dict, Any
+from collections import Counter
+from typing import Any, Dict, List, Optional, Tuple
 
 import datasets
+import neptune
 import numpy as np
 import torch
-from datasets import Dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
     BitsAndBytesConfig,
+    EvalPrediction,
     FalconForSequenceClassification,
     LlamaForSequenceClassification,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     Trainer,
-    TrainingArguments, EvalPrediction,
+    TrainingArguments,
 )
+from transformers.integrations import NeptuneCallback
 from transformers.utils import is_peft_available
 
 from nonwestlit import NEPTUNE_CFG
@@ -155,13 +158,23 @@ def init_model(
     return tokenizer, model
 
 
-def _get_collator(task_type: str, tokenizer: PreTrainedTokenizerBase, num_virtual_tokens: int, max_sequence_length: int, is_mapping: bool):
+def _get_collator(
+    task_type: str,
+    tokenizer: PreTrainedTokenizerBase,
+    num_virtual_tokens: int,
+    max_sequence_length: int,
+    is_mapping: bool,
+):
     if task_type == NonwestlitTaskTypes.seq_cls:
-        return NonwestlitSequenceClassificationDataCollator(tokenizer, max_sequence_length, is_mapping=is_mapping)
+        return NonwestlitSequenceClassificationDataCollator(
+            tokenizer, max_sequence_length, is_mapping=is_mapping
+        )
     elif task_type == NonwestlitTaskTypes.casual_lm:
         return NonwestlitCausalLMDataCollator(tokenizer, max_sequence_length, is_mapping=is_mapping)
     elif task_type == NonwestlitTaskTypes.prompt_tuning:
-        return NonwestlitPromptTuningDataCollator(tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=is_mapping)
+        return NonwestlitPromptTuningDataCollator(
+            tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=is_mapping
+        )
 
 
 def _check_neptune_creds():
@@ -194,11 +207,35 @@ def data_evaluation(input_data: EvalPrediction) -> Dict[str, Any]:
         else:
             metrics[f"val_recall_{i}"] = 0
         if metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"] != 0:
-            metrics[f"val_f1_{i}"] = 2 * metrics[f"val_precision_{i}"] * metrics[f"val_recall_{i}"] / (metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"])
+            metrics[f"val_f1_{i}"] = (
+                2
+                * metrics[f"val_precision_{i}"]
+                * metrics[f"val_recall_{i}"]
+                / (metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"])
+            )
         else:
             metrics[f"val_f1_{i}"] = 0
     metrics["val_f1_macro"] = (metrics["val_f1_0"] + metrics["val_f1_1"] + metrics["val_f1_2"]) / 3
+    gt_counts = Counter(input_data.label_ids.tolist())
+    metrics["val_f1_weighted"] = (
+        (
+            gt_counts[0] * metrics["val_f1_0"]
+            + gt_counts[1] * metrics["val_f1_1"]
+            + gt_counts[2] * metrics["val_f1_2"]
+        )
+        / 3
+        / len(input_data.label_ids)
+    )
     return metrics
+
+
+def create_neptune_callback(experiment_tracking: bool):
+    if not experiment_tracking:
+        return None, None
+    _check_neptune_creds()
+    run = neptune.init_run()
+    neptune_callback = NeptuneCallback(run=run)
+    return run, neptune_callback
 
 
 def train(
@@ -245,11 +282,7 @@ def train(
     """
     num_labels = kwargs.pop("num_labels") if "num_labels" in kwargs else None
     num_virtual_tokens = kwargs.pop("num_virtual_tokens") if "num_virtual_tokens" in kwargs else None
-    if experiment_tracking:
-        _check_neptune_creds()
-        report_to = "neptune"
-    else:
-        report_to = "none"
+    run, metric_callback = create_neptune_callback(experiment_tracking)
     if task_type == "sequence-classification" and num_labels is None:
         raise TypeError(
             "If `task_type` is 'sequence-classification', then `num_labels` parameter has to be passed."
@@ -293,24 +326,47 @@ def train(
     else:
         print_trainable_parameters(model)
     if dataset_framework == "torch":
-        collator = _get_collator(task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=False)
+        collator = _get_collator(
+            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=False
+        )
         train_dataset = NONWESTLITDataset(train_data_path)
         eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
     elif dataset_framework == "hf":
-        d = datasets.load_dataset(train_data_path, tokenizer=tokenizer, max_sequence_length=max_sequence_length)
+        d = datasets.load_dataset(
+            train_data_path, tokenizer=tokenizer, max_sequence_length=max_sequence_length
+        )
         train_dataset = d["train"]
         eval_dataset = d["validation"] if eval_data_path is not None else None
-        collator = _get_collator(task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True)
+        collator = _get_collator(
+            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True
+        )
         train_dataset = train_dataset.map(collator)
         eval_dataset = eval_dataset.map(collator)
         collator = None  # No need for collator to be used, we utilized mapping which is faster.
     else:
-        raise ValueError(f"Only valid choices for 'dataset_framework' argument are [hf,torch], got {dataset_framework}")
+        raise ValueError(
+            f"Only valid choices for 'dataset_framework' argument are [hf,torch], got {dataset_framework}"
+        )
     if "evaluation_strategy" not in kwargs and eval_data_path is not None:
         kwargs["evaluation_strategy"] = "steps"
+
+    if run is not None:
+        aux_data = {
+            "train_data": train_data_path,
+            "eval_data": eval_data_path,
+            "dataset_framework": dataset_framework,
+            "freeze_backbone": freeze_backbone,
+            "adapter": adapter,
+            "lora_target_modules": lora_target_modules,
+            "bnb_quantization": bnb_quantization,
+            "gradient_checkpointing": gradient_checkpointing,
+            "task_type": task_type,
+            "max_sequence_length": max_sequence_length,
+        }
+        run["entrypoint_args"] = aux_data
     compute_metrics = data_evaluation if task_type == NonwestlitTaskTypes.seq_cls else None
     training_args = TrainingArguments(
-        output_dir=output_dir, do_train=True, report_to=report_to, **kwargs
+        output_dir=output_dir, do_train=True, report_to="none", callbacks=metric_callback, **kwargs
     )
     trainer = Trainer(
         model=model,
@@ -319,6 +375,6 @@ def train(
         tokenizer=tokenizer,
         args=training_args,
         data_collator=collator,
-        compute_metrics=compute_metrics
+        compute_metrics=compute_metrics,
     )
     return trainer.train()
