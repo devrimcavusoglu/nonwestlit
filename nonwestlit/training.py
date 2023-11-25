@@ -1,12 +1,14 @@
 import os
 import warnings
 from collections import Counter
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import datasets
 import neptune
 import numpy as np
 import torch
+from neptune import Run
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
@@ -229,13 +231,14 @@ def data_evaluation(input_data: EvalPrediction) -> Dict[str, Any]:
     return metrics
 
 
-def create_neptune_callback(experiment_tracking: bool):
+def create_neptune_callback(experiment_tracking: bool, callbacks: List) -> Nullable[Run]:
     if not experiment_tracking:
-        return None, None
+        return None
     _check_neptune_creds()
     run = neptune.init_run()
     neptune_callback = NeptuneCallback(run=run)
-    return run, neptune_callback
+    callbacks.append(neptune_callback)
+    return run
 
 
 def train(
@@ -282,7 +285,11 @@ def train(
     """
     num_labels = kwargs.pop("num_labels") if "num_labels" in kwargs else None
     num_virtual_tokens = kwargs.pop("num_virtual_tokens") if "num_virtual_tokens" in kwargs else None
-    run, metric_callback = create_neptune_callback(experiment_tracking)
+    output_dir = Path(output_dir)
+    if output_dir.exists():
+        raise FileExistsError(f"Given output directory '{output_dir.as_posix()}' exists. This check prevents "
+                              f"accidental overwriting to the existing directories which may result in loss of model "
+                              f"weights.")
     if task_type == "sequence-classification" and num_labels is None:
         raise TypeError(
             "If `task_type` is 'sequence-classification', then `num_labels` parameter has to be passed."
@@ -308,7 +315,6 @@ def train(
         warnings.warn(
             "4 and 8 bit quantization is not supported on CPU, forcefully setting the effective device to GPU."
         )
-
     tokenizer, model = init_model(
         model_name_or_path,
         num_labels,
@@ -350,6 +356,8 @@ def train(
     if "evaluation_strategy" not in kwargs and eval_data_path is not None:
         kwargs["evaluation_strategy"] = "steps"
 
+    callbacks = []
+    run = create_neptune_callback(experiment_tracking, callbacks)
     if run is not None:
         aux_data = {
             "train_data": train_data_path,
@@ -366,7 +374,7 @@ def train(
         run["entrypoint_args"] = aux_data
     compute_metrics = data_evaluation if task_type == NonwestlitTaskTypes.seq_cls else None
     training_args = TrainingArguments(
-        output_dir=output_dir, do_train=True, report_to="none", callbacks=metric_callback, **kwargs
+        output_dir=output_dir.as_posix(), do_train=True, report_to="none", **kwargs
     )
     trainer = Trainer(
         model=model,
@@ -376,5 +384,6 @@ def train(
         args=training_args,
         data_collator=collator,
         compute_metrics=compute_metrics,
+        callbacks=callbacks
     )
     return trainer.train()
