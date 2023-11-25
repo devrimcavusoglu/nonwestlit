@@ -1,6 +1,5 @@
-
 <p align="center">
-<img src="https://site.unibo.it/nonwestlit/en/project/@@images/c716bd81-0be6-4d23-912f-01165f0391ee.jpeg">
+<img src="https://site.unibo.it/nonwestlit/en/project/@@images/308d566c-4b9d-42c1-bcb6-d883a4057989.png">
 <br>
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/python-3.10-blue"></a>
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
