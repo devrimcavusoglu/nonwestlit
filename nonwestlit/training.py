@@ -338,11 +338,14 @@ def train(
         train_dataset = NONWESTLITDataset(train_data_path)
         eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
     elif dataset_framework == "hf":
-        d = datasets.load_dataset(
-            train_data_path, tokenizer=tokenizer, max_sequence_length=max_sequence_length
+        train_name, train_subset = train_data_path.split(",")
+        eval_name, eval_subset = eval_data_path.split(",")
+        train_dataset = datasets.load_dataset(
+            train_name.strip(), train_subset.strip(), split="train", tokenizer=tokenizer, max_sequence_length=max_sequence_length
         )
-        train_dataset = d["train"]
-        eval_dataset = d["validation"] if eval_data_path is not None else None
+        eval_dataset = datasets.load_dataset(
+            eval_name.strip(), eval_subset.strip(), split="validation", tokenizer=tokenizer, max_sequence_length=max_sequence_length
+        ) if eval_data_path is not None else None
         collator = _get_collator(
             task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True
         )

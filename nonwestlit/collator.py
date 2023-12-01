@@ -144,6 +144,7 @@ class NonwestlitSequenceClassificationDataCollator(NonwestlitBaseDataCollator):
         Args:
         tokenizer (PreTrainedTokenizerBase): Tokenizer object for the handling of the inputs.
     """
+    multi_label: bool = False
 
     def postprocess_inputs(self, model_inputs: BatchEncoding, labels: List[int]) -> BatchEncoding:
         if "overflow_to_sample_mapping" in model_inputs:
