@@ -354,7 +354,7 @@ def train(
             "dataset_framework": dataset_framework,
             "freeze_backbone": freeze_backbone,
             "adapter": adapter,
-            "lora_target_modules": lora_target_modules,
+            "lora_target_modules": str(lora_target_modules),
             "bnb_quantization": bnb_quantization,
             "gradient_checkpointing": gradient_checkpointing,
             "task_type": task_type,
