@@ -32,7 +32,7 @@ from nonwestlit.collator import (
     NonwestlitSequenceClassificationDataCollator,
 )
 from nonwestlit.dataset import NONWESTLITDataset
-from nonwestlit.metric import data_evaluation, multi_label_data_evaluation
+from nonwestlit.metric import SingleLabelClassificationEvaluator, MultiLabelClassificationEvaluator
 from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
 
 if is_peft_available():
@@ -171,7 +171,7 @@ def _get_collator(
     max_sequence_length: int,
     is_mapping: bool,
 ):
-    if task_type == NonwestlitTaskTypes.seq_cls:
+    if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]:
         return NonwestlitSequenceClassificationDataCollator(
             tokenizer, max_sequence_length, is_mapping=is_mapping
         )
@@ -334,9 +334,12 @@ def train(
         kwargs["evaluation_strategy"] = "steps"
 
     if task_type == NonwestlitTaskTypes.seq_cls:
-        compute_metrics = data_evaluation
+        compute_metrics = SingleLabelClassificationEvaluator(num_labels=num_labels)
     elif task_type == NonwestlitTaskTypes.multi_seq_cls:
-        compute_metrics = multi_label_data_evaluation
+        compute_metrics = MultiLabelClassificationEvaluator(num_labels=num_labels)
+    else:
+        warnings.warn("No evalutor is set up. 'compute_metrics' is set to None.")
+        compute_metrics = None
 
     training_args = TrainingArguments(
         output_dir=output_dir.as_posix(), do_train=True, report_to="none", **kwargs
@@ -356,6 +359,8 @@ def train(
             "gradient_checkpointing": gradient_checkpointing,
             "task_type": task_type,
             "max_sequence_length": max_sequence_length,
+            "task_specific/num_labels": num_labels,
+            "task_specific/num_virtual_tokens": num_virtual_tokens
         }
         run["entrypoint_args"] = aux_data
     trainer = Trainer(
