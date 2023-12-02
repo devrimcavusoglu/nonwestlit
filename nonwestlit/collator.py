@@ -144,7 +144,6 @@ class NonwestlitSequenceClassificationDataCollator(NonwestlitBaseDataCollator):
         Args:
         tokenizer (PreTrainedTokenizerBase): Tokenizer object for the handling of the inputs.
     """
-    multi_label: bool = False
 
     def postprocess_inputs(self, model_inputs: BatchEncoding, labels: List[int]) -> BatchEncoding:
         if "overflow_to_sample_mapping" in model_inputs:
@@ -154,6 +153,30 @@ class NonwestlitSequenceClassificationDataCollator(NonwestlitBaseDataCollator):
                 sample_labels = [labels[i]] * overflow_to_sample_mapping.count(i)
                 all_labels.extend(sample_labels)
             model_inputs["labels"] = torch.tensor(all_labels)
-        else:
+        elif isinstance(labels, int):
             model_inputs["labels"] = torch.tensor(labels)
+        else:
+            model_inputs["labels"] = torch.tensor(labels, dtype=torch.float16)
         return model_inputs
+
+
+if __name__ == "__main__":
+    import datasets
+    from transformers import AutoTokenizer
+
+    from nonwestlit import PROJECT_ROOT
+
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+    max_sequence_length = 1024
+    num_labels = 8
+    data_path = PROJECT_ROOT / "data/ottoman_second_level"
+    d = datasets.load_dataset(data_path.as_posix(), "cultural_discourse_subject", split="train",
+                              tokenizer=tokenizer)
+    collator = NonwestlitSequenceClassificationDataCollator(
+        tokenizer, max_sequence_length, is_mapping=True,
+    )
+    d = d.map(collator)
+    for item in d:
+        print(item)
+        break

@@ -7,6 +7,7 @@ Nullable = Optional  # Semantically separated nullable type hint for return type
 
 
 class NonwestlitTaskTypes(StrEnum):
+    multi_seq_cls = "multilabel-sequence-classification"
     seq_cls = "sequence-classification"
     casual_lm = "causal-lm"
     prompt_tuning = "prompt-tuning"
