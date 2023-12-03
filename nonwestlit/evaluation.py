@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import numpy as np
 from transformers import EvalPrediction
@@ -65,35 +65,64 @@ class MultiLabelClassificationEvaluator(ClassificationEvaluator):
         super().__init__(*args, **kwargs)
         self.threshold = threshold
 
+    @staticmethod
+    def _set_thresholds(thresholds: float | List[float]) -> List[float]:
+        if thresholds is None:
+            thresholds = np.arange(0, 1, 0.05)
+        elif isinstance(thresholds, float):
+            thresholds = [thresholds]
+        return thresholds
+
+    def mean_average_precision(self, logits: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
+        thresholds = self._set_thresholds(thresholds)
+        slogits = sigmoid(logits)
+        precisions_at_t = []
+        for t in thresholds:
+            pred_cls = np.where(slogits > t, 1, 0)
+            pred_support = np.sum(pred_cls, axis=0)
+            hits = pred_cls == labels
+            precision = np.sum(np.logical_and(pred_cls == 1, hits), axis=0) / pred_support
+            precision = np.nan_to_num(precision)  # convert nan to zero
+            precisions_at_t.append(np.mean(precision))
+        return np.mean(precisions_at_t)
+
+    def mean_average_recall(self, logits: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
+        thresholds = self._set_thresholds(thresholds)
+        slogits = sigmoid(logits)
+        recalls_at_t = []
+        gt_support = np.sum(labels, axis=0)
+        for t in thresholds:
+            pred_cls = np.where(slogits > t, 1, 0)
+            hits = pred_cls == labels
+            recall = np.sum(np.logical_and(labels == 1, hits), axis=0) / gt_support
+            recall = np.nan_to_num(recall)  # convert nan to zero
+            recalls_at_t.append(np.mean(recall))
+        return np.mean(recalls_at_t)
+
+    def mean_average_accuracy(self, logits: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
+        thresholds = self._set_thresholds(thresholds)
+        slogits = sigmoid(logits)
+        accs_at_t = []
+        for t in thresholds:
+            pred_cls = np.where(slogits > t, 1, 0)
+            hits = pred_cls == labels
+            accs_at_t.append(np.mean(hits))
+        return np.mean(accs_at_t)
+
     def compute(self, input_data: EvalPrediction) -> Dict[str, Any]:
-        pred_cls = np.where(sigmoid(input_data.predictions) > self.threshold, 1, 0)
+        logits = input_data.predictions
         labels = input_data.label_ids
         metrics = {}
-        n = np.prod(pred_cls.shape)
-        hits = pred_cls == labels
-        pred_support = np.sum(pred_cls, axis=0)
-        gt_support = np.sum(labels, axis=0)
 
-        metrics["val_accuracy"] = np.sum(hits) / n
+        metrics["AA@0.5"] = self.mean_average_accuracy(logits, labels, thresholds=0.5)
+        metrics["mAA"] = self.mean_average_accuracy(logits, labels)
 
         # AP (Average Precision)
-        p = np.sum(np.logical_and(pred_cls == 1, hits), axis=0) / pred_support
-        p = np.nan_to_num(p)
-        metrics["avg_precision"] = np.mean(p)
+        metrics["AP@0.5"] = self.mean_average_precision(logits, labels, thresholds=0.5)
+        metrics["mAP"] = self.mean_average_precision(logits, labels)
 
         # AR (Average Recall)
-        r = np.sum(np.logical_and(labels == 1, hits), axis=0) / gt_support
-        r = np.nan_to_num(r)
-        metrics["avg_recall"] = np.mean(r)
+        metrics["AR@0.5"] = self.mean_average_recall(logits, labels, thresholds=0.5)
+        metrics["mAR"] = self.mean_average_recall(logits, labels)
 
         return metrics
-
-
-if __name__ == "__main__":
-    np.random.seed(42)
-    a = np.array([[1, 0, 0, 1, 0, 0, 0, 0], [1, 0, 0, 0, 1, 1, 0, 0]], dtype=np.uint8)
-    b = np.random.randn(2, 8)
-    p = EvalPrediction(label_ids=a, predictions=b)
-    evaluator = MultiLabelClassificationEvaluator(num_labels=8)
-    m = evaluator(p)
-    print(m)

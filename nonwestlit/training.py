@@ -32,7 +32,7 @@ from nonwestlit.collator import (
     NonwestlitSequenceClassificationDataCollator,
 )
 from nonwestlit.dataset import NONWESTLITDataset
-from nonwestlit.metric import SingleLabelClassificationEvaluator, MultiLabelClassificationEvaluator
+from nonwestlit.evaluation import SingleLabelClassificationEvaluator, MultiLabelClassificationEvaluator
 from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
 
 if is_peft_available():
@@ -183,13 +183,13 @@ def _get_collator(
         )
 
 
-def _check_neptune_creds():
+def _check_neptune_creds(neptune_project_name: str):
     if os.getenv("NEPTUNE_PROJECT") is not None and os.getenv("NEPTUNE_API_TOKEN") is not None:
         return
     elif NEPTUNE_CFG.exists():
         cfg = read_cfg(NEPTUNE_CFG.as_posix())
-        neptune_project = cfg["credentials"]["project"]
-        neptune_token = cfg["credentials"]["api_token"]
+        neptune_project = cfg[neptune_project_name]["project"]
+        neptune_token = cfg[neptune_project_name]["api_token"]
         assert neptune_project is not None and neptune_token is not None
         # set as environment variables
         os.environ["NEPTUNE_PROJECT"] = neptune_project
@@ -198,10 +198,10 @@ def _check_neptune_creds():
     raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
 
 
-def create_neptune_callback(experiment_tracking: bool, callbacks: List) -> Nullable[Run]:
+def create_neptune_callback(neptune_project_name: str, experiment_tracking: bool, callbacks: List) -> Nullable[Run]:
     if not experiment_tracking:
         return None
-    _check_neptune_creds()
+    _check_neptune_creds(neptune_project_name)
     run = neptune.init_run()
     neptune_callback = NeptuneCallback(run=run)
     callbacks.append(neptune_callback)
@@ -210,6 +210,7 @@ def create_neptune_callback(experiment_tracking: bool, callbacks: List) -> Nulla
 
 def train(
     model_name_or_path: str,
+    neptune_project_name: str,
     output_dir: str,
     train_data_path: str,
     eval_data_path: Optional[str] = None,
@@ -229,13 +230,16 @@ def train(
 
     Args:
         model_name_or_path (str): Model name from the HF Hub or path.
+        neptune_project_name (str): Neptune project name for logging, name in format of PROJECT_NAME and not in
+            WORKSPACE_NAME/PROJECT_NAME, WORKSPACE='nonwestlit' is reserved, prepended and cannot be changed. This
+            parameter is set as positional argument to avoid having conflicts.
         output_dir (str): Path to a directory where the model directory is saved under.
         train_data_path (str): Path to the training dataset file.
         eval_data_path (Optional(str)): Path to the evaluation dataset file.
         dataset_framework (Optional(str): Framework for dataset to be used. Valid choices: [hf, torch].
         freeze_backbone (Optional(bool)):  If true, backbone transformer is frozen and only head is trained.
             For training adapters, backbone is always frozen.
-        adapter (Optional(str)): Adapter method (e.g. 'lora'). By default `None`.
+        adapter (Optional(str)): Adapter method (e.g. 'lora'). By default, `None`.
         lora_target_modules (Optional(List(str))): Target module names for the lora adapters to be trained on.
         bnb_quantization (Optional(str)): BitsAndBytes quantization type.
         gradient_checkpointing (bool): If true, gradient checkpointing is used if applicable.
@@ -346,7 +350,7 @@ def train(
     )
 
     callbacks = []
-    run = create_neptune_callback(experiment_tracking, callbacks)
+    run = create_neptune_callback(neptune_project_name, experiment_tracking, callbacks)
     if run is not None:
         aux_data = {
             "train_data": train_data_path,
