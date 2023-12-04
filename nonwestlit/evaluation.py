@@ -61,9 +61,8 @@ class SingleLabelClassificationEvaluator(ClassificationEvaluator):
 
 
 class MultiLabelClassificationEvaluator(ClassificationEvaluator):
-    def __init__(self, threshold: float = 0.5, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.threshold = threshold
 
     @staticmethod
     def _set_thresholds(thresholds: float | List[float]) -> List[float]:
@@ -73,56 +72,51 @@ class MultiLabelClassificationEvaluator(ClassificationEvaluator):
             thresholds = [thresholds]
         return thresholds
 
-    def mean_average_precision(self, logits: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
-        thresholds = self._set_thresholds(thresholds)
-        slogits = sigmoid(logits)
-        precisions_at_t = []
-        for t in thresholds:
-            pred_cls = np.where(slogits > t, 1, 0)
-            pred_support = np.sum(pred_cls, axis=0)
-            hits = pred_cls == labels
-            precision = np.sum(np.logical_and(pred_cls == 1, hits), axis=0) / pred_support
-            precision = np.nan_to_num(precision)  # convert nan to zero
-            precisions_at_t.append(np.mean(precision))
-        return np.mean(precisions_at_t)
-
-    def mean_average_recall(self, logits: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
-        thresholds = self._set_thresholds(thresholds)
-        slogits = sigmoid(logits)
-        recalls_at_t = []
+    def precision_recall_f1(self, pred_cls: np.ndarray, labels: np.ndarray):
+        pred_support = np.sum(pred_cls, axis=0)
         gt_support = np.sum(labels, axis=0)
-        for t in thresholds:
-            pred_cls = np.where(slogits > t, 1, 0)
-            hits = pred_cls == labels
-            recall = np.sum(np.logical_and(labels == 1, hits), axis=0) / gt_support
-            recall = np.nan_to_num(recall)  # convert nan to zero
-            recalls_at_t.append(np.mean(recall))
-        return np.mean(recalls_at_t)
+        hits = pred_cls == labels
 
-    def mean_average_accuracy(self, logits: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
+        precision = np.sum(np.logical_and(pred_cls == 1, hits), axis=0) / pred_support
+        precision = np.nan_to_num(precision)  # convert nan to zero
+
+        recall = np.sum(np.logical_and(labels == 1, hits), axis=0) / gt_support
+        recall = np.nan_to_num(recall)  # convert nan to zero
+
+        pr = np.vstack([precision, recall])
+        f1 = 2 * np.prod(pr, axis=0) / np.sum(pr, axis=0)
+        f1 = np.nan_to_num(f1)
+
+        ap = np.mean(precision)
+        ar = np.mean(recall)
+        af = np.mean(f1)
+        return ap, ar, af
+
+    def prf_at_threshold(self, probs: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
         thresholds = self._set_thresholds(thresholds)
-        slogits = sigmoid(logits)
-        accs_at_t = []
+        metrics_at_t = []
         for t in thresholds:
-            pred_cls = np.where(slogits > t, 1, 0)
-            hits = pred_cls == labels
-            accs_at_t.append(np.mean(hits))
-        return np.mean(accs_at_t)
+            pred_cls = np.where(probs >= t, 1, 0)
+            ap, ar, af = self.precision_recall_f1(pred_cls, labels)
+            metrics_at_t.append([ap, ar, af])
+        return np.mean(metrics_at_t, axis=0)
 
     def compute(self, input_data: EvalPrediction) -> Dict[str, Any]:
-        logits = input_data.predictions
+        probs = sigmoid(input_data.predictions)
         labels = input_data.label_ids
         metrics = {}
 
-        metrics["AA@0.5"] = self.mean_average_accuracy(logits, labels, thresholds=0.5)
-        metrics["mAA"] = self.mean_average_accuracy(logits, labels)
+        p_t, r_t, f_t = self.prf_at_threshold(probs, labels, thresholds=0.5)
+        map, mar, maf = self.prf_at_threshold(probs, labels)
 
-        # AP (Average Precision)
-        metrics["AP@0.5"] = self.mean_average_precision(logits, labels, thresholds=0.5)
-        metrics["mAP"] = self.mean_average_precision(logits, labels)
+        metrics["AP@0.5"] = p_t
+        metrics["AR@0.5"] = r_t
+        metrics["AF1@0.5"] = f_t
 
-        # AR (Average Recall)
-        metrics["AR@0.5"] = self.mean_average_recall(logits, labels, thresholds=0.5)
-        metrics["mAR"] = self.mean_average_recall(logits, labels)
+        metrics["mAP"] = map
+        metrics["mAR"] = mar
+        metrics["mAF1"] = maf
 
         return metrics
+
+
