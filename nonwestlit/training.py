@@ -32,6 +32,7 @@ from nonwestlit.collator import (
     NonwestlitSequenceClassificationDataCollator,
 )
 from nonwestlit.dataset import NONWESTLITDataset
+from nonwestlit.evaluation import SingleLabelClassificationEvaluator, MultiLabelClassificationEvaluator
 from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
 
 if is_peft_available():
@@ -49,6 +50,7 @@ if is_peft_available():
     TASK_TO_LORA = {
         "causal-lm": TaskType.CAUSAL_LM,
         "sequence-classification": TaskType.SEQ_CLS,
+        "multilabel-sequence-classification": TaskType.SEQ_CLS,
         "prompt-tuning": TaskType.CAUSAL_LM,
     }
 
@@ -110,11 +112,13 @@ def _get_adapter_config(
 def _construct_model(
     model_name_or_path: str, task_type: str, quantization_cfg, num_labels: int
 ) -> PreTrainedModel:
-    if task_type == NonwestlitTaskTypes.seq_cls:
+    if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]:
+        problem_type = "multi_label_classification" if NonwestlitTaskTypes.multi_seq_cls else "single_label_classification"
         return AutoModelForSequenceClassification.from_pretrained(
             model_name_or_path,
             num_labels=num_labels,
             quantization_config=quantization_cfg,
+            problem_type=problem_type
         )
     elif task_type in [NonwestlitTaskTypes.casual_lm, NonwestlitTaskTypes.prompt_tuning]:
         return AutoModelForCausalLM.from_pretrained(
@@ -167,7 +171,7 @@ def _get_collator(
     max_sequence_length: int,
     is_mapping: bool,
 ):
-    if task_type == NonwestlitTaskTypes.seq_cls:
+    if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]:
         return NonwestlitSequenceClassificationDataCollator(
             tokenizer, max_sequence_length, is_mapping=is_mapping
         )
@@ -179,13 +183,13 @@ def _get_collator(
         )
 
 
-def _check_neptune_creds():
+def _check_neptune_creds(neptune_project_name: str):
     if os.getenv("NEPTUNE_PROJECT") is not None and os.getenv("NEPTUNE_API_TOKEN") is not None:
         return
     elif NEPTUNE_CFG.exists():
         cfg = read_cfg(NEPTUNE_CFG.as_posix())
-        neptune_project = cfg["credentials"]["project"]
-        neptune_token = cfg["credentials"]["api_token"]
+        neptune_project = cfg[neptune_project_name]["project"]
+        neptune_token = cfg[neptune_project_name]["api_token"]
         assert neptune_project is not None and neptune_token is not None
         # set as environment variables
         os.environ["NEPTUNE_PROJECT"] = neptune_project
@@ -194,47 +198,10 @@ def _check_neptune_creds():
     raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
 
 
-def data_evaluation(input_data: EvalPrediction) -> Dict[str, Any]:
-    pred_cls = input_data.predictions.argmax(-1)
-    metrics = {}
-    metrics["val_accuracy"] = sum(pred_cls == input_data.label_ids) / len(pred_cls)
-    for i in range(3):  # num_classes
-        hits = sum(np.where(pred_cls == i, 1, 0) == np.where(input_data.label_ids == i, 1, -1))
-        if sum(pred_cls == i) != 0:
-            metrics[f"val_precision_{i}"] = hits / sum(pred_cls == i)
-        else:
-            metrics[f"val_precision_{i}"] = 0
-        if sum(input_data.label_ids == i) != 0:
-            metrics[f"val_recall_{i}"] = hits / sum(input_data.label_ids == i)
-        else:
-            metrics[f"val_recall_{i}"] = 0
-        if metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"] != 0:
-            metrics[f"val_f1_{i}"] = (
-                2
-                * metrics[f"val_precision_{i}"]
-                * metrics[f"val_recall_{i}"]
-                / (metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"])
-            )
-        else:
-            metrics[f"val_f1_{i}"] = 0
-    metrics["val_f1_macro"] = (metrics["val_f1_0"] + metrics["val_f1_1"] + metrics["val_f1_2"]) / 3
-    gt_counts = Counter(input_data.label_ids.tolist())
-    metrics["val_f1_weighted"] = (
-        (
-            gt_counts[0] * metrics["val_f1_0"]
-            + gt_counts[1] * metrics["val_f1_1"]
-            + gt_counts[2] * metrics["val_f1_2"]
-        )
-        / 3
-        / len(input_data.label_ids)
-    )
-    return metrics
-
-
-def create_neptune_callback(experiment_tracking: bool, callbacks: List) -> Nullable[Run]:
+def create_neptune_callback(neptune_project_name: str, experiment_tracking: bool, callbacks: List) -> Nullable[Run]:
     if not experiment_tracking:
         return None
-    _check_neptune_creds()
+    _check_neptune_creds(neptune_project_name)
     run = neptune.init_run()
     neptune_callback = NeptuneCallback(run=run)
     callbacks.append(neptune_callback)
@@ -243,6 +210,7 @@ def create_neptune_callback(experiment_tracking: bool, callbacks: List) -> Nulla
 
 def train(
     model_name_or_path: str,
+    neptune_project_name: str,
     output_dir: str,
     train_data_path: str,
     eval_data_path: Optional[str] = None,
@@ -262,13 +230,16 @@ def train(
 
     Args:
         model_name_or_path (str): Model name from the HF Hub or path.
+        neptune_project_name (str): Neptune project name for logging, name in format of PROJECT_NAME and not in
+            WORKSPACE_NAME/PROJECT_NAME, WORKSPACE='nonwestlit' is reserved, prepended and cannot be changed. This
+            parameter is set as positional argument to avoid having conflicts.
         output_dir (str): Path to a directory where the model directory is saved under.
         train_data_path (str): Path to the training dataset file.
         eval_data_path (Optional(str)): Path to the evaluation dataset file.
         dataset_framework (Optional(str): Framework for dataset to be used. Valid choices: [hf, torch].
         freeze_backbone (Optional(bool)):  If true, backbone transformer is frozen and only head is trained.
             For training adapters, backbone is always frozen.
-        adapter (Optional(str)): Adapter method (e.g. 'lora'). By default `None`.
+        adapter (Optional(str)): Adapter method (e.g. 'lora'). By default, `None`.
         lora_target_modules (Optional(List(str))): Target module names for the lora adapters to be trained on.
         bnb_quantization (Optional(str)): BitsAndBytes quantization type.
         gradient_checkpointing (bool): If true, gradient checkpointing is used if applicable.
@@ -290,11 +261,11 @@ def train(
         raise FileExistsError(f"Given output directory '{output_dir.as_posix()}' exists. This check prevents "
                               f"accidental overwriting to the existing directories which may result in loss of model "
                               f"weights.")
-    if task_type == "sequence-classification" and num_labels is None:
+    if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls] and num_labels is None:
         raise TypeError(
-            "If `task_type` is 'sequence-classification', then `num_labels` parameter has to be passed."
+            "If `task_type` is 'sequence-classification' or , then `num_labels` parameter has to be passed."
         )
-    elif task_type == "causal-lm" and num_labels is not None:
+    elif task_type == NonwestlitTaskTypes.casual_lm and num_labels is not None:
         warnings.warn(
             "Parameters 'num_labels' is passed, but task_type is 'causal-lm'. 'num_labels' will be igonred."
         )
@@ -338,11 +309,21 @@ def train(
         train_dataset = NONWESTLITDataset(train_data_path)
         eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
     elif dataset_framework == "hf":
-        d = datasets.load_dataset(
-            train_data_path, tokenizer=tokenizer, max_sequence_length=max_sequence_length
-        )
-        train_dataset = d["train"]
-        eval_dataset = d["validation"] if eval_data_path is not None else None
+        train_name, train_subset = train_data_path.split(":")
+        eval_name, eval_subset = eval_data_path.split(":")
+        if train_data_path == eval_data_path:
+            d = datasets.load_dataset(
+                train_name.strip(), train_subset.strip(), tokenizer=tokenizer, max_sequence_length=max_sequence_length
+            )
+            train_dataset = d["train"]
+            eval_dataset = d["validation"]
+        else:
+            train_dataset = datasets.load_dataset(
+                train_name.strip(), train_subset.strip(), split="train", tokenizer=tokenizer, max_sequence_length=max_sequence_length
+            )
+            eval_dataset = datasets.load_dataset(
+                eval_name.strip(), eval_subset.strip(), split="validation", tokenizer=tokenizer, max_sequence_length=max_sequence_length
+            ) if eval_data_path is not None else None
         collator = _get_collator(
             task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True
         )
@@ -356,8 +337,20 @@ def train(
     if "evaluation_strategy" not in kwargs and eval_data_path is not None:
         kwargs["evaluation_strategy"] = "steps"
 
+    if task_type == NonwestlitTaskTypes.seq_cls:
+        compute_metrics = SingleLabelClassificationEvaluator(num_labels=num_labels)
+    elif task_type == NonwestlitTaskTypes.multi_seq_cls:
+        compute_metrics = MultiLabelClassificationEvaluator(num_labels=num_labels)
+    else:
+        warnings.warn("No evalutor is set up. 'compute_metrics' is set to None.")
+        compute_metrics = None
+
+    training_args = TrainingArguments(
+        output_dir=output_dir.as_posix(), do_train=True, report_to="none", **kwargs
+    )
+
     callbacks = []
-    run = create_neptune_callback(experiment_tracking, callbacks)
+    run = create_neptune_callback(neptune_project_name, experiment_tracking, callbacks)
     if run is not None:
         aux_data = {
             "train_data": train_data_path,
@@ -365,17 +358,15 @@ def train(
             "dataset_framework": dataset_framework,
             "freeze_backbone": freeze_backbone,
             "adapter": adapter,
-            "lora_target_modules": lora_target_modules,
+            "lora_target_modules": str(lora_target_modules),
             "bnb_quantization": bnb_quantization,
             "gradient_checkpointing": gradient_checkpointing,
             "task_type": task_type,
             "max_sequence_length": max_sequence_length,
+            "task_specific/num_labels": num_labels,
+            "task_specific/num_virtual_tokens": num_virtual_tokens
         }
         run["entrypoint_args"] = aux_data
-    compute_metrics = data_evaluation if task_type == NonwestlitTaskTypes.seq_cls else None
-    training_args = TrainingArguments(
-        output_dir=output_dir.as_posix(), do_train=True, report_to="none", **kwargs
-    )
     trainer = Trainer(
         model=model,
         train_dataset=train_dataset,

@@ -153,6 +153,8 @@ class NonwestlitSequenceClassificationDataCollator(NonwestlitBaseDataCollator):
                 sample_labels = [labels[i]] * overflow_to_sample_mapping.count(i)
                 all_labels.extend(sample_labels)
             model_inputs["labels"] = torch.tensor(all_labels)
-        else:
+        elif isinstance(labels, int):
             model_inputs["labels"] = torch.tensor(labels)
+        else:
+            model_inputs["labels"] = torch.tensor(labels, dtype=torch.float16)
         return model_inputs

@@ -22,8 +22,7 @@ def main(args):
         data = pd.read_csv(split, encoding="utf-8")
         data = data[~data["label"].isnull()]
         data["id"] = list(range(1, len(data) + 1))
-        data["text_type"] = data["label"].astype(int)
-        data.drop("label", axis=1, inplace=True)
+        data["label"] = data["label"].astype(int)
         with open(output_path / f"{split.stem}.json", "w", encoding="utf-8") as file:
             data.to_json(file, orient="records", force_ascii=False)
 
