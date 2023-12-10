@@ -158,25 +158,3 @@ class NonwestlitSequenceClassificationDataCollator(NonwestlitBaseDataCollator):
         else:
             model_inputs["labels"] = torch.tensor(labels, dtype=torch.float16)
         return model_inputs
-
-
-if __name__ == "__main__":
-    import datasets
-    from transformers import AutoTokenizer
-
-    from nonwestlit import PROJECT_ROOT
-
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
-    max_sequence_length = 1024
-    num_labels = 8
-    data_path = PROJECT_ROOT / "data/ottoman_second_level"
-    d = datasets.load_dataset(data_path.as_posix(), "cultural_discourse_subject", split="train",
-                              tokenizer=tokenizer)
-    collator = NonwestlitSequenceClassificationDataCollator(
-        tokenizer, max_sequence_length, is_mapping=True,
-    )
-    d = d.map(collator)
-    for item in d:
-        print(item)
-        break
