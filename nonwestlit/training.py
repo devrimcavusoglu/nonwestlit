@@ -14,11 +14,9 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     BitsAndBytesConfig,
-    EvalPrediction,
     FalconForSequenceClassification,
     LlamaForSequenceClassification,
     PreTrainedModel,
-    PreTrainedTokenizerBase,
     Trainer,
     TrainingArguments,
 )
@@ -26,13 +24,8 @@ from transformers.integrations import NeptuneCallback
 from transformers.utils import is_peft_available
 
 from nonwestlit import NEPTUNE_CFG
-from nonwestlit.collator import (
-    NonwestlitCausalLMDataCollator,
-    NonwestlitPromptTuningDataCollator,
-    NonwestlitSequenceClassificationDataCollator,
-)
-from nonwestlit.dataset import NONWESTLITDataset
-from nonwestlit.evaluation import SingleLabelClassificationEvaluator, MultiLabelClassificationEvaluator
+from nonwestlit.data_utils import get_collator, load_hf_data, load_torch_data
+from nonwestlit.metrics import MultiLabelClassificationMetrics, SingleLabelClassificationMetrics
 from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
 
 if is_peft_available():
@@ -113,12 +106,16 @@ def _construct_model(
     model_name_or_path: str, task_type: str, quantization_cfg, num_labels: int
 ) -> PreTrainedModel:
     if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]:
-        problem_type = "multi_label_classification" if NonwestlitTaskTypes.multi_seq_cls else "single_label_classification"
+        problem_type = (
+            "multi_label_classification"
+            if NonwestlitTaskTypes.multi_seq_cls
+            else "single_label_classification"
+        )
         return AutoModelForSequenceClassification.from_pretrained(
             model_name_or_path,
             num_labels=num_labels,
             quantization_config=quantization_cfg,
-            problem_type=problem_type
+            problem_type=problem_type,
         )
     elif task_type in [NonwestlitTaskTypes.casual_lm, NonwestlitTaskTypes.prompt_tuning]:
         return AutoModelForCausalLM.from_pretrained(
@@ -164,25 +161,6 @@ def init_model(
     return tokenizer, model
 
 
-def _get_collator(
-    task_type: str,
-    tokenizer: PreTrainedTokenizerBase,
-    num_virtual_tokens: int,
-    max_sequence_length: int,
-    is_mapping: bool,
-):
-    if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]:
-        return NonwestlitSequenceClassificationDataCollator(
-            tokenizer, max_sequence_length, is_mapping=is_mapping
-        )
-    elif task_type == NonwestlitTaskTypes.casual_lm:
-        return NonwestlitCausalLMDataCollator(tokenizer, max_sequence_length, is_mapping=is_mapping)
-    elif task_type == NonwestlitTaskTypes.prompt_tuning:
-        return NonwestlitPromptTuningDataCollator(
-            tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=is_mapping
-        )
-
-
 def _check_neptune_creds(neptune_project_name: str):
     if os.getenv("NEPTUNE_PROJECT") is not None and os.getenv("NEPTUNE_API_TOKEN") is not None:
         return
@@ -198,7 +176,9 @@ def _check_neptune_creds(neptune_project_name: str):
     raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
 
 
-def create_neptune_callback(neptune_project_name: str, experiment_tracking: bool, callbacks: List) -> Nullable[Run]:
+def create_neptune_callback(
+    neptune_project_name: str, experiment_tracking: bool, callbacks: List
+) -> Nullable[Run]:
     if not experiment_tracking:
         return None
     _check_neptune_creds(neptune_project_name)
@@ -258,10 +238,15 @@ def train(
     num_virtual_tokens = kwargs.pop("num_virtual_tokens") if "num_virtual_tokens" in kwargs else None
     output_dir = Path(output_dir)
     if output_dir.exists():
-        raise FileExistsError(f"Given output directory '{output_dir.as_posix()}' exists. This check prevents "
-                              f"accidental overwriting to the existing directories which may result in loss of model "
-                              f"weights.")
-    if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls] and num_labels is None:
+        raise FileExistsError(
+            f"Given output directory '{output_dir.as_posix()}' exists. This check prevents "
+            f"accidental overwriting to the existing directories which may result in loss of model "
+            f"weights."
+        )
+    if (
+        task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]
+        and num_labels is None
+    ):
         raise TypeError(
             "If `task_type` is 'sequence-classification' or , then `num_labels` parameter has to be passed."
         )
@@ -302,45 +287,14 @@ def train(
         model.print_trainable_parameters()
     else:
         print_trainable_parameters(model)
-    if dataset_framework == "torch":
-        collator = _get_collator(
-            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=False
-        )
-        train_dataset = NONWESTLITDataset(train_data_path)
-        eval_dataset = NONWESTLITDataset(eval_data_path) if eval_data_path is not None else None
-    elif dataset_framework == "hf":
-        train_name, train_subset = train_data_path.split(":")
-        eval_name, eval_subset = eval_data_path.split(":")
-        if train_data_path == eval_data_path:
-            d = datasets.load_dataset(
-                train_name.strip(), train_subset.strip(), tokenizer=tokenizer, max_sequence_length=max_sequence_length
-            )
-            train_dataset = d["train"]
-            eval_dataset = d["validation"]
-        else:
-            train_dataset = datasets.load_dataset(
-                train_name.strip(), train_subset.strip(), split="train", tokenizer=tokenizer, max_sequence_length=max_sequence_length
-            )
-            eval_dataset = datasets.load_dataset(
-                eval_name.strip(), eval_subset.strip(), split="validation", tokenizer=tokenizer, max_sequence_length=max_sequence_length
-            ) if eval_data_path is not None else None
-        collator = _get_collator(
-            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True
-        )
-        train_dataset = train_dataset.map(collator)
-        eval_dataset = eval_dataset.map(collator)
-        collator = None  # No need for collator to be used, we utilized mapping which is faster.
-    else:
-        raise ValueError(
-            f"Only valid choices for 'dataset_framework' argument are [hf,torch], got {dataset_framework}"
-        )
+
     if "evaluation_strategy" not in kwargs and eval_data_path is not None:
         kwargs["evaluation_strategy"] = "steps"
 
     if task_type == NonwestlitTaskTypes.seq_cls:
-        compute_metrics = SingleLabelClassificationEvaluator(num_labels=num_labels)
+        compute_metrics = SingleLabelClassificationMetrics(num_labels=num_labels)
     elif task_type == NonwestlitTaskTypes.multi_seq_cls:
-        compute_metrics = MultiLabelClassificationEvaluator(num_labels=num_labels)
+        compute_metrics = MultiLabelClassificationMetrics(num_labels=num_labels)
     else:
         warnings.warn("No evalutor is set up. 'compute_metrics' is set to None.")
         compute_metrics = None
@@ -348,6 +302,24 @@ def train(
     training_args = TrainingArguments(
         output_dir=output_dir.as_posix(), do_train=True, report_to="none", **kwargs
     )
+    if dataset_framework == "torch":
+        collator = get_collator(
+            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=False
+        )
+        train_dataset, eval_dataset, _ = load_torch_data(train_data_path, eval_data_path)
+    elif dataset_framework == "hf":
+        assert train_data_path == eval_data_path
+        collator = get_collator(
+            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True
+        )
+        train_dataset, eval_dataset, _ = load_hf_data(
+            train_data_path, tokenizer, collator, max_sequence_length=max_sequence_length
+        )
+        collator = None  # No need for collator to be used, we utilized mapping which is faster.
+    else:
+        raise ValueError(
+            f"Only valid choices for 'dataset_framework' argument are [hf,torch], got {dataset_framework}"
+        )
 
     callbacks = []
     run = create_neptune_callback(neptune_project_name, experiment_tracking, callbacks)
@@ -364,7 +336,7 @@ def train(
             "task_type": task_type,
             "max_sequence_length": max_sequence_length,
             "task_specific/num_labels": num_labels,
-            "task_specific/num_virtual_tokens": num_virtual_tokens
+            "task_specific/num_virtual_tokens": num_virtual_tokens,
         }
         run["entrypoint_args"] = aux_data
     trainer = Trainer(
@@ -375,6 +347,6 @@ def train(
         args=training_args,
         data_collator=collator,
         compute_metrics=compute_metrics,
-        callbacks=callbacks
+        callbacks=callbacks,
     )
     return trainer.train()

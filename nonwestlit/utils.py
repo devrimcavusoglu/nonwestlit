@@ -3,6 +3,8 @@ from configparser import ConfigParser
 from enum import StrEnum
 from typing import Optional
 
+import numpy as np
+
 Nullable = Optional  # Semantically separated nullable type hint for return types.
 
 
@@ -40,3 +42,15 @@ def print_trainable_parameters(model):
     print(
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
     )
+
+
+# TENSOR UTILS #
+
+
+def sigmoid(ar: np.ndarray) -> np.ndarray:
+    return 1 / (1 + np.exp(-ar))
+
+
+def softmax(x: np.ndarray) -> np.ndarray:
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x

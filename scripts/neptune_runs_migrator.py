@@ -31,18 +31,13 @@ from typing import Optional
 import neptune
 import pandas as pd
 from neptune import management
-from neptune.exceptions import (
-    MissingFieldException,
-    TypeDoesNotSupportAttributeException,
-)
+from neptune.exceptions import MissingFieldException, TypeDoesNotSupportAttributeException
 from neptune.types import File, GitRef
 from tqdm.auto import tqdm
 
 # %%
 from_project = (
-    input("Enter project name to migrate from in WORKSPACE_NAME/PROJECT_NAME format:")
-    .strip()
-    .lower()
+    input("Enter project name to migrate from in WORKSPACE_NAME/PROJECT_NAME format:").strip().lower()
 )
 
 # %%
@@ -195,9 +190,7 @@ for from_run_id in tqdm(to_copy):
                                 to_run[namespace].append(
                                     value=row.value,
                                     step=row.step,
-                                    timestamp=time.mktime(
-                                        pd.to_datetime(row.timestamp).timetuple()
-                                    ),
+                                    timestamp=time.mktime(pd.to_datetime(row.timestamp).timetuple()),
                                 )
                         elif str(from_run[namespace]).split()[0] == "<File":
                             # Copy File
@@ -251,9 +244,7 @@ for from_run_id in tqdm(to_copy):
                                     for file in glob(f"{tmpdirname}/*"):
                                         to_run[namespace].append(File(file), wait=True)
                                 except Exception as e:
-                                    logging.error(
-                                        f"Failed to copy {namespace} due to exception:\n{e}"
-                                    )
+                                    logging.error(f"Failed to copy {namespace} due to exception:\n{e}")
                         else:
                             to_run[namespace] = from_run[namespace].fetch()
                     except Exception as e:

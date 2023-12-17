@@ -1,16 +1,14 @@
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 import numpy as np
 from transformers import EvalPrediction
 
-
-def sigmoid(ar: np.ndarray) -> np.ndarray:
-    return 1 / (1 + np.exp(-ar))
+from nonwestlit.utils import sigmoid
 
 
-class ClassificationEvaluator(ABC):
+class ClassificationMetrics(ABC):
     def __init__(self, num_labels: int):
         self.num_labels = num_labels
 
@@ -22,7 +20,7 @@ class ClassificationEvaluator(ABC):
         pass
 
 
-class SingleLabelClassificationEvaluator(ClassificationEvaluator):
+class SingleLabelClassificationMetrics(ClassificationMetrics):
     def compute(self, input_data: EvalPrediction) -> Dict[str, Any]:
         pred_cls = input_data.predictions.argmax(-1)
         metrics = {}
@@ -60,7 +58,7 @@ class SingleLabelClassificationEvaluator(ClassificationEvaluator):
         return metrics
 
 
-class MultiLabelClassificationEvaluator(ClassificationEvaluator):
+class MultiLabelClassificationMetrics(ClassificationMetrics):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -92,7 +90,9 @@ class MultiLabelClassificationEvaluator(ClassificationEvaluator):
         af = np.mean(f1)
         return ap, ar, af
 
-    def prf_at_threshold(self, probs: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None):
+    def prf_at_threshold(
+        self, probs: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None
+    ):
         thresholds = self._set_thresholds(thresholds)
         metrics_at_t = []
         for t in thresholds:
@@ -118,5 +118,3 @@ class MultiLabelClassificationEvaluator(ClassificationEvaluator):
         metrics["mAF1"] = maf
 
         return metrics
-
-
