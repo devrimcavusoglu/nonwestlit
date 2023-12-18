@@ -301,13 +301,14 @@ def train(
     )
     if dataset_framework == "torch":
         collator = get_collator(
-            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=False
+            task_type, tokenizer, max_sequence_length, is_mapping=False,
+            num_virtual_tokens=num_virtual_tokens
         )
         train_dataset, eval_dataset, _ = load_torch_data(train_data_path, eval_data_path)
     elif dataset_framework == "hf":
         assert train_data_path == eval_data_path
         collator = get_collator(
-            task_type, tokenizer, num_virtual_tokens, max_sequence_length, is_mapping=True
+            task_type, tokenizer, max_sequence_length, is_mapping=True, num_virtual_tokens=num_virtual_tokens
         )
         train_dataset, eval_dataset, _ = load_hf_data(
             train_data_path, tokenizer, collator, max_sequence_length=max_sequence_length
