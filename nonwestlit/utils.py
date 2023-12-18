@@ -53,4 +53,8 @@ def sigmoid(ar: np.ndarray) -> np.ndarray:
 
 def softmax(x: np.ndarray) -> np.ndarray:
     e_x = np.exp(x - np.max(x))
-    return e_x / e_x
+    return e_x / e_x.sum()
+
+
+def geometric_mean(x: np.ndarray) -> np.ndarray:
+    return np.prod(x) ** (1 / len(x))

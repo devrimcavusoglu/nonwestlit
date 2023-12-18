@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 import numpy as np
+from sklearn.metrics import average_precision_score, precision_recall_fscore_support
 from transformers import EvalPrediction
 
-from nonwestlit.utils import sigmoid
+from nonwestlit.utils import sigmoid, softmax
 
 
 class ClassificationMetrics(ABC):
@@ -21,36 +22,41 @@ class ClassificationMetrics(ABC):
 
 
 class SingleLabelClassificationMetrics(ClassificationMetrics):
-    def compute(self, input_data: EvalPrediction) -> Dict[str, Any]:
-        pred_cls = input_data.predictions.argmax(-1)
+    def compute(self, input_data: EvalPrediction, prefix: str = "val", function_to_apply: Callable = softmax) -> Dict[str, Any]:
+        probs = input_data.predictions
+        if function_to_apply is not None:
+            probs = function_to_apply(probs)
+        pred_cls = probs.argmax(-1)
         metrics = {}
-        metrics["val_accuracy"] = sum(pred_cls == input_data.label_ids) / len(pred_cls)
+        metrics[f"{prefix}_accuracy"] = sum(pred_cls == input_data.label_ids) / len(pred_cls)
         for i in range(self.num_labels):
             hits = sum(np.where(pred_cls == i, 1, 0) == np.where(input_data.label_ids == i, 1, -1))
             if sum(pred_cls == i) != 0:
-                metrics[f"val_precision_{i}"] = hits / sum(pred_cls == i)
+                metrics[f"{prefix}_precision_{i}"] = hits / sum(pred_cls == i)
             else:
-                metrics[f"val_precision_{i}"] = 0
+                metrics[f"{prefix}_precision_{i}"] = 0
             if sum(input_data.label_ids == i) != 0:
-                metrics[f"val_recall_{i}"] = hits / sum(input_data.label_ids == i)
+                metrics[f"{prefix}_recall_{i}"] = hits / sum(input_data.label_ids == i)
             else:
-                metrics[f"val_recall_{i}"] = 0
-            if metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"] != 0:
-                metrics[f"val_f1_{i}"] = (
+                metrics[f"{prefix}_recall_{i}"] = 0
+            if metrics[f"{prefix}_precision_{i}"] + metrics[f"val_recall_{i}"] != 0:
+                metrics[f"{prefix}_f1_{i}"] = (
                     2
-                    * metrics[f"val_precision_{i}"]
-                    * metrics[f"val_recall_{i}"]
-                    / (metrics[f"val_precision_{i}"] + metrics[f"val_recall_{i}"])
+                    * metrics[f"{prefix}_precision_{i}"]
+                    * metrics[f"{prefix}_recall_{i}"]
+                    / (metrics[f"{prefix}_precision_{i}"] + metrics[f"{prefix}_recall_{i}"])
                 )
             else:
-                metrics[f"val_f1_{i}"] = 0
-        metrics["val_f1_macro"] = (metrics["val_f1_0"] + metrics["val_f1_1"] + metrics["val_f1_2"]) / 3
+                metrics[f"{prefix}_f1_{i}"] = 0
+        metrics[f"{prefix}_f1_macro"] = (
+            metrics[f"{prefix}_f1_0"] + metrics[f"{prefix}_f1_1"] + metrics[f"{prefix}_f1_2"]
+        ) / 3
         gt_counts = Counter(input_data.label_ids.tolist())
-        metrics["val_f1_weighted"] = (
+        metrics[f"{prefix}_f1_weighted"] = (
             (
-                gt_counts[0] * metrics["val_f1_0"]
-                + gt_counts[1] * metrics["val_f1_1"]
-                + gt_counts[2] * metrics["val_f1_2"]
+                gt_counts[0] * metrics[f"{prefix}_f1_0"]
+                + gt_counts[1] * metrics[f"{prefix}_f1_1"]
+                + gt_counts[2] * metrics[f"{prefix}_f1_2"]
             )
             / 3
             / len(input_data.label_ids)
@@ -59,9 +65,6 @@ class SingleLabelClassificationMetrics(ClassificationMetrics):
 
 
 class MultiLabelClassificationMetrics(ClassificationMetrics):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     @staticmethod
     def _set_thresholds(thresholds: float | List[float]) -> List[float]:
         if thresholds is None:
@@ -70,26 +73,6 @@ class MultiLabelClassificationMetrics(ClassificationMetrics):
             thresholds = [thresholds]
         return thresholds
 
-    def precision_recall_f1(self, pred_cls: np.ndarray, labels: np.ndarray):
-        pred_support = np.sum(pred_cls, axis=0)
-        gt_support = np.sum(labels, axis=0)
-        hits = pred_cls == labels
-
-        precision = np.sum(np.logical_and(pred_cls == 1, hits), axis=0) / pred_support
-        precision = np.nan_to_num(precision)  # convert nan to zero
-
-        recall = np.sum(np.logical_and(labels == 1, hits), axis=0) / gt_support
-        recall = np.nan_to_num(recall)  # convert nan to zero
-
-        pr = np.vstack([precision, recall])
-        f1 = 2 * np.prod(pr, axis=0) / np.sum(pr, axis=0)
-        f1 = np.nan_to_num(f1)
-
-        ap = np.mean(precision)
-        ar = np.mean(recall)
-        af = np.mean(f1)
-        return ap, ar, af
-
     def prf_at_threshold(
         self, probs: np.ndarray, labels: np.ndarray, thresholds: float | List[float] = None
     ):
@@ -97,24 +80,30 @@ class MultiLabelClassificationMetrics(ClassificationMetrics):
         metrics_at_t = []
         for t in thresholds:
             pred_cls = np.where(probs >= t, 1, 0)
-            ap, ar, af = self.precision_recall_f1(pred_cls, labels)
-            metrics_at_t.append([ap, ar, af])
+            p, r, f, _ = precision_recall_fscore_support(y_pred=pred_cls, y_true=labels, average="micro")
+            metrics_at_t.append([p, r, f])
         return np.mean(metrics_at_t, axis=0)
 
-    def compute(self, input_data: EvalPrediction) -> Dict[str, Any]:
-        probs = sigmoid(input_data.predictions)
+    def compute(
+        self, input_data: EvalPrediction, function_to_apply: Callable = sigmoid
+    ) -> Dict[str, Any]:
+        probs = input_data.predictions
+        if function_to_apply is not None:
+            probs = function_to_apply(input_data.predictions)
         labels = input_data.label_ids
         metrics = {}
 
         p_t, r_t, f_t = self.prf_at_threshold(probs, labels, thresholds=0.5)
-        map, mar, maf = self.prf_at_threshold(probs, labels)
+        pmp, pmr, pmf = self.prf_at_threshold(probs, labels)
 
         metrics["AP@0.5"] = p_t
         metrics["AR@0.5"] = r_t
         metrics["AF1@0.5"] = f_t
 
-        metrics["mAP"] = map
-        metrics["mAR"] = mar
-        metrics["mAF1"] = maf
+        metrics["PMP"] = pmp
+        metrics["PMR"] = pmr
+        metrics["PMF"] = pmf
+
+        metrics["mAP"] = average_precision_score(y_true=labels, y_score=probs)
 
         return metrics
