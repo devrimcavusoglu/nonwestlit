@@ -1,17 +1,14 @@
 from abc import ABC, abstractmethod
-from collections import Counter
 from typing import Any, Callable, Dict, List
 
 import numpy as np
-from sklearn.metrics import average_precision_score, precision_recall_fscore_support
+from sklearn.metrics import average_precision_score, precision_recall_fscore_support, accuracy_score, f1_score
 from transformers import EvalPrediction
 
 from nonwestlit.utils import sigmoid, softmax
 
 
 class ClassificationMetrics(ABC):
-    def __init__(self, num_labels: int):
-        self.num_labels = num_labels
 
     def __call__(self, *args, **kwargs):
         return self.compute(*args, **kwargs)
@@ -22,45 +19,32 @@ class ClassificationMetrics(ABC):
 
 
 class SingleLabelClassificationMetrics(ClassificationMetrics):
+    def one_hot_encoding(self, x: np.ndarray, n_labels: int) -> np.ndarray:
+        m = len(x)
+        ohe = np.zeros((m, n_labels))
+        idx = np.arange(m)
+        ohe[idx, x] = 1
+        return ohe
+
     def compute(self, input_data: EvalPrediction, prefix: str = "val", function_to_apply: Callable = softmax) -> Dict[str, Any]:
         probs = input_data.predictions
+        n_labels = probs.shape[1]
         if function_to_apply is not None:
             probs = function_to_apply(probs)
         pred_cls = probs.argmax(-1)
         metrics = {}
-        metrics[f"{prefix}_accuracy"] = sum(pred_cls == input_data.label_ids) / len(pred_cls)
-        for i in range(self.num_labels):
-            hits = sum(np.where(pred_cls == i, 1, 0) == np.where(input_data.label_ids == i, 1, -1))
-            if sum(pred_cls == i) != 0:
-                metrics[f"{prefix}_precision_{i}"] = hits / sum(pred_cls == i)
-            else:
-                metrics[f"{prefix}_precision_{i}"] = 0
-            if sum(input_data.label_ids == i) != 0:
-                metrics[f"{prefix}_recall_{i}"] = hits / sum(input_data.label_ids == i)
-            else:
-                metrics[f"{prefix}_recall_{i}"] = 0
-            if metrics[f"{prefix}_precision_{i}"] + metrics[f"val_recall_{i}"] != 0:
-                metrics[f"{prefix}_f1_{i}"] = (
-                    2
-                    * metrics[f"{prefix}_precision_{i}"]
-                    * metrics[f"{prefix}_recall_{i}"]
-                    / (metrics[f"{prefix}_precision_{i}"] + metrics[f"{prefix}_recall_{i}"])
-                )
-            else:
-                metrics[f"{prefix}_f1_{i}"] = 0
-        metrics[f"{prefix}_f1_macro"] = (
-            metrics[f"{prefix}_f1_0"] + metrics[f"{prefix}_f1_1"] + metrics[f"{prefix}_f1_2"]
-        ) / 3
-        gt_counts = Counter(input_data.label_ids.tolist())
-        metrics[f"{prefix}_f1_weighted"] = (
-            (
-                gt_counts[0] * metrics[f"{prefix}_f1_0"]
-                + gt_counts[1] * metrics[f"{prefix}_f1_1"]
-                + gt_counts[2] * metrics[f"{prefix}_f1_2"]
-            )
-            / 3
-            / len(input_data.label_ids)
-        )
+        metrics[f"{prefix}_accuracy"] = accuracy_score(y_true=input_data.label_ids, y_pred=pred_cls)
+        metrics[f"{prefix}_f1_macro"] = f1_score(y_true=input_data.label_ids, y_pred=pred_cls, average="macro")
+        metrics[f"{prefix}_f1_weighted"] = f1_score(y_true=input_data.label_ids, y_pred=pred_cls, average="weighted")
+        p, r, f, _ = precision_recall_fscore_support(y_pred=pred_cls, y_true=input_data.label_ids, average=None)
+        for i in range(len(p)):
+            metrics[f"{prefix}_precision_{i}"] = p[i]
+            metrics[f"{prefix}_recall_{i}"] = r[i]
+            metrics[f"{prefix}_f1_{i}"] = f[i]
+
+        labels_ohe = self.one_hot_encoding(input_data.label_ids, n_labels)
+        metrics["mAP"] = average_precision_score(y_true=labels_ohe, y_score=probs)  # default avg='macro'
+        metrics["mAP_weighted"] = average_precision_score(y_true=labels_ohe, y_score=probs, average="weighted")
         return metrics
 
 
@@ -105,5 +89,20 @@ class MultiLabelClassificationMetrics(ClassificationMetrics):
         metrics["PMF"] = pmf
 
         metrics["mAP"] = average_precision_score(y_true=labels, y_score=probs)
+        metrics["mAP_weighted"] = average_precision_score(y_true=labels, y_score=probs, average="weighted")
 
         return metrics
+
+
+if __name__ == "__main__":
+    np.random.seed(42)
+    predictions = np.random.randn(9, 3)
+    predictions = np.apply_along_axis(softmax, axis=1, arr=predictions)
+    labels = np.random.randint(0, 3, size=9)
+    print(predictions.argmax(-1))
+    print(labels)
+    metric_obj = EvalPrediction(label_ids=labels, predictions=predictions)
+    metrics = SingleLabelClassificationMetrics(num_labels=3)
+    out = metrics(metric_obj, function_to_apply=None)
+    import json
+    print(json.dumps(out, indent=2))

@@ -23,7 +23,8 @@ from transformers.utils import is_peft_available
 from nonwestlit import NEPTUNE_CFG
 from nonwestlit.data_utils import get_collator, load_hf_data, load_torch_data
 from nonwestlit.metrics import MultiLabelClassificationMetrics, SingleLabelClassificationMetrics
-from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg
+from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg, \
+    create_neptune_run
 
 if is_peft_available():
     from peft import (
@@ -158,33 +159,6 @@ def init_model(
     return tokenizer, model
 
 
-def _check_neptune_creds(neptune_project_name: str):
-    if os.getenv("NEPTUNE_PROJECT") is not None and os.getenv("NEPTUNE_API_TOKEN") is not None:
-        return
-    elif NEPTUNE_CFG.exists():
-        cfg = read_cfg(NEPTUNE_CFG.as_posix())
-        neptune_project = cfg[neptune_project_name]["project"]
-        neptune_token = cfg[neptune_project_name]["api_token"]
-        assert neptune_project is not None and neptune_token is not None
-        # set as environment variables
-        os.environ["NEPTUNE_PROJECT"] = neptune_project
-        os.environ["NEPTUNE_API_TOKEN"] = neptune_token
-        return
-    raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
-
-
-def create_neptune_callback(
-    neptune_project_name: str, experiment_tracking: bool, callbacks: List
-) -> Nullable[Run]:
-    if not experiment_tracking:
-        return None
-    _check_neptune_creds(neptune_project_name)
-    run = neptune.init_run()
-    neptune_callback = NeptuneCallback(run=run)
-    callbacks.append(neptune_callback)
-    return run
-
-
 def train(
     model_name_or_path: str,
     neptune_project_name: str,
@@ -289,9 +263,9 @@ def train(
         kwargs["evaluation_strategy"] = "steps"
 
     if task_type == NonwestlitTaskTypes.seq_cls:
-        compute_metrics = SingleLabelClassificationMetrics(num_labels=num_labels)
+        compute_metrics = SingleLabelClassificationMetrics()
     elif task_type == NonwestlitTaskTypes.multi_seq_cls:
-        compute_metrics = MultiLabelClassificationMetrics(num_labels=num_labels)
+        compute_metrics = MultiLabelClassificationMetrics()
     else:
         warnings.warn("No evalutor is set up. 'compute_metrics' is set to None.")
         compute_metrics = None
@@ -320,7 +294,7 @@ def train(
         )
 
     callbacks = []
-    run = create_neptune_callback(neptune_project_name, experiment_tracking, callbacks)
+    run = create_neptune_run(neptune_project_name, experiment_tracking, callbacks)
     if run is not None:
         aux_data = {
             "train_data": train_data_path,
