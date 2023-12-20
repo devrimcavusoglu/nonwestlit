@@ -1,11 +1,8 @@
-import os
 import warnings
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import neptune
 import torch
-from neptune import Run
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
@@ -17,14 +14,11 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-from transformers.integrations import NeptuneCallback
 from transformers.utils import is_peft_available
 
-from nonwestlit import NEPTUNE_CFG
 from nonwestlit.data_utils import get_collator, load_hf_data, load_torch_data
 from nonwestlit.metrics import MultiLabelClassificationMetrics, SingleLabelClassificationMetrics
-from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, read_cfg, \
-    create_neptune_run
+from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, create_neptune_run
 
 if is_peft_available():
     from peft import (
@@ -161,18 +155,18 @@ def init_model(
 
 def train(
     model_name_or_path: str,
-    neptune_project_name: str,
+
     output_dir: str,
     train_data_path: str,
     eval_data_path: Optional[str] = None,
     dataset_framework: Optional[str] = "hf",
+    neptune_project_name: Optional[str] = None,
     freeze_backbone: Optional[bool] = True,
     adapter: Optional[str] = None,
     lora_target_modules: Optional[List[str]] = None,
     bnb_quantization: Optional[str] = None,
     gradient_checkpointing: bool = True,
     task_type: str = "sequence-classification",
-    experiment_tracking: bool = True,
     max_sequence_length: Optional[int] = None,
     **kwargs,
 ):
@@ -181,13 +175,14 @@ def train(
 
     Args:
         model_name_or_path (str): Model name from the HF Hub or path.
-        neptune_project_name (str): Neptune project name for logging, name in format of PROJECT_NAME and not in
-            WORKSPACE_NAME/PROJECT_NAME, WORKSPACE='nonwestlit' is reserved, prepended and cannot be changed. This
-            parameter is set as positional argument to avoid having conflicts.
         output_dir (str): Path to a directory where the model directory is saved under.
         train_data_path (str): Path to the training dataset file.
         eval_data_path (Optional(str)): Path to the evaluation dataset file.
         dataset_framework (Optional(str): Framework for dataset to be used. Valid choices: [hf, torch].
+        neptune_project_name (Optional(str)): Neptune project name for logging, name in format of PROJECT_NAME and not in
+            WORKSPACE_NAME/PROJECT_NAME, WORKSPACE='nonwestlit' is reserved, prepended and cannot be changed. This
+            parameter is set as positional argument to avoid having conflicts. If `None`, the metrics are not logged
+            to neptune.
         freeze_backbone (Optional(bool)):  If true, backbone transformer is frozen and only head is trained.
             For training adapters, backbone is always frozen.
         adapter (Optional(str)): Adapter method (e.g. 'lora'). By default, `None`.
@@ -195,7 +190,6 @@ def train(
         bnb_quantization (Optional(str)): BitsAndBytes quantization type.
         gradient_checkpointing (bool): If true, gradient checkpointing is used if applicable.
         task_type (str): Task type of the training. Set as 'sequence-classification' by default.
-        experiment_tracking (bool): If true, the experiment logs are reported to Neptune.
         max_sequence_length (int): Maximum sequence length for input tokens to be truncated. If None, truncates to the
             longest input seq by default.
         kwargs: All keyword arguments for the :py:class:`TrainingArguments`. To see the supported arguments, see
@@ -294,8 +288,8 @@ def train(
         )
 
     callbacks = []
-    run = create_neptune_run(neptune_project_name, experiment_tracking, callbacks)
-    if run is not None:
+    if neptune_project_name is not None:
+        run = create_neptune_run(neptune_project_name, callbacks)
         aux_data = {
             "train_data": train_data_path,
             "eval_data": eval_data_path,
