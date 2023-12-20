@@ -62,10 +62,6 @@ def softmax(x: np.ndarray) -> np.ndarray:
     return e_x / e_x.sum()
 
 
-def geometric_mean(x: np.ndarray) -> np.ndarray:
-    return np.prod(x) ** (1 / len(x))
-
-
 # EXPERIMENT TRACKING UTILS #
 
 
@@ -74,21 +70,22 @@ def _check_neptune_creds(neptune_project_name: str):
         return
     elif NEPTUNE_CFG.exists():
         cfg = read_cfg(NEPTUNE_CFG.as_posix())
-        neptune_project = cfg[neptune_project_name]["project"]
-        neptune_token = cfg[neptune_project_name]["api_token"]
+        neptune_token = cfg["credentials"]["api_token"]
+        try:
+            neptune_project = cfg[neptune_project_name]["project"]
+        except KeyError:
+            neptune_project = neptune_project_name
         assert neptune_project is not None and neptune_token is not None
         # set as environment variables
         os.environ["NEPTUNE_PROJECT"] = neptune_project
         os.environ["NEPTUNE_API_TOKEN"] = neptune_token
         return
-    raise EnvironmentError("Neither environment variables nor neptune.cfg is found.")
+    raise EnvironmentError("Neither environment variables nor `neptune.cfg` is found.")
 
 
 def create_neptune_run(
-    neptune_project_name: str, experiment_tracking: bool, callbacks: list | None = None
-) -> Nullable[Run]:
-    if not experiment_tracking:
-        return None
+    neptune_project_name: str, callbacks: list | None = None
+) -> Run:
     _check_neptune_creds(neptune_project_name)
     run = neptune.init_run()
     if callbacks is not None:

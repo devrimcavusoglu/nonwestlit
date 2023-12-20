@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Tuple
 
 import datasets
@@ -51,13 +52,15 @@ def load_hf_data(
     max_sequence_length: int | None = None,
     **kwargs
 ):
-    if ":" in data_path:
-        name, subset = data_path.split(":")
-        name, subset = name.strip(), subset.strip()
+    data_path = Path(data_path).resolve()
+    if ":" in data_path.name:
+        name, subset = data_path.name.split(":")
+        name = data_path.parent / name.strip()
+        subset = subset.strip()
     else:
-        name, subset = data_path.strip(), None
+        name, subset = data_path, None
     d = datasets.load_dataset(
-        name, subset, tokenizer=tokenizer, max_sequence_length=max_sequence_length, **kwargs
+        name.as_posix(), subset, tokenizer=tokenizer, max_sequence_length=max_sequence_length, **kwargs
     )
     train_dataset, eval_dataset, test_dataset = None, None, None
 

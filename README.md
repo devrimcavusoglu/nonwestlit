@@ -41,6 +41,13 @@ An alternative way to add the project root to the PYTHONPATH permanently for the
 
 ## Usage
 
+To access the CLI and get information about available commands run the following:
+
+```shell
+python nonwestlit --help
+# or python nonwestlit <command> --help
+```
+
 ❗**Important Note:** The terminal commands given below are only for demonstration purposes, and may not represent all 
 capability of the train arguments. The entry point `nonwestlit train` seamlessly support all HF TrainingArguments, 
 just pass by the exact name and correct value. Please refer to [TrainingArguments](https://huggingface.co/docs/transformers/main_classes/trainer#transformers.TrainingArguments)
@@ -82,13 +89,35 @@ either remove the optimizer file or move it outside the model directory.
 
 ### Experiment Tracking
 
-We are using Neptune.ai as an experiment tracking tool. To start logging neptune you need to create a simple config file as below, and name it `neptune.cfg` which must reside under the project root. Enter values without any quotation marks (shown in the example below).
+We are using Neptune.ai as an experiment tracking tool. To start logging neptune you need to create a simple config 
+file as below, and name it `neptune.cfg` which must reside under the project root. Enter values without any quotation 
+marks (shown in the example below).
 
 ```cfg
 [credentials]
-project=<PROJECT_NAME>  # e.g. nonwestlit/text-type-classification
 api_token=<YOUR_NEPTUNE_TOKEN>
+
+[first-level-classification]
+project=nonwestlit/first-level-classification
+
+[second-level-classification]
+project=nonwestlit/second-level-classification
+
+# Append as necessary (if you create a new project)
+[project-key]
+project=<PROJECT_NAME>
 ```
+
+Alternatively, you can set them as environment variables for project to be logged in set `NEPTUNE_PROJECT`, and for 
+the API token set `NEPTUNE_API_TOKEN`. You can use `export` (MacOS, Linux) or `set` (Windows). For Linux you can 
+set the environment variables as follows:
+
+```shell
+export NEPTUNE_PROJECT=<PROJECT_NAME> && export NEPTUNE_API_TOKEN=<YOUR_NEPTUNE_TOKEN>
+```
+
+Note that, since these are set for those sessions only, you need to set these environment variables once they expire
+(e.g on reboot).
 
 ## Development
 
