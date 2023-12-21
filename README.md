@@ -27,6 +27,13 @@ conda env create -f environment.yml
 
 Activate the created conda environment by `conda activate nonwestlit`. 
 
+The following packages must be installed too for the integer quantization support (4bit & 8bit).
+
+```shell
+pip install bitsandbytes>=0.41.2.post2  # For integer quantization support
+pip install peft==0.7.1  # For LoRA adapters
+```
+
 Also, add the project root directory to PYTHONPATH to develop more smoothly without experiencing any path related problems. For earlier `conda` versions this was possible by `conda develop <project root dir>`, but it is [deprecated](https://github.com/conda/conda-build/issues/4251) (idk why?), so you can choose to manually add it to the PYTHONPATH. Heads up, this may require installing `conda-build` with miniconda.
 
 An alternative way to add the project root to the PYTHONPATH permanently for the environment, try the following:
