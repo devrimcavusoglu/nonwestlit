@@ -100,7 +100,7 @@ def _construct_model(
     if task_type in [NonwestlitTaskTypes.seq_cls, NonwestlitTaskTypes.multi_seq_cls]:
         problem_type = (
             "multi_label_classification"
-            if NonwestlitTaskTypes.multi_seq_cls
+            if task_type == NonwestlitTaskTypes.multi_seq_cls
             else "single_label_classification"
         )
         return AutoModelForSequenceClassification.from_pretrained(
