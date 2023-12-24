@@ -52,7 +52,7 @@ def load_hf_data(
     max_sequence_length: int | None = None,
     **kwargs
 ):
-    data_path = Path(data_path).resolve()
+    data_path = Path(data_path)
     if ":" in data_path.name:
         name, subset = data_path.name.split(":")
         name = data_path.parent / name.strip()
