@@ -18,6 +18,7 @@ dependencies:
     - fire
     - flake8==3.9.2
     - isort==5.9.2
+    - huggingface-hub==0.19.4
     - neptune==1.8.2
     - notebook
     - pytest==7.4.3
