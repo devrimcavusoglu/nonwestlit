@@ -1,21 +1,16 @@
-from typing import List
+from typing import List, Tuple, Dict
 
-from transformers import AutoTokenizer, pipeline
+from peft import AutoPeftModelForSequenceClassification
+from transformers import AutoTokenizer, TextClassificationPipeline, PreTrainedTokenizerBase, BatchEncoding
+from transformers.pipelines.base import GenericTensor
+
+from nonwestlit.dataset import NONWESTLITDataset
 
 
-def predict(
-    model_name_or_path: str,
-    inputs: List[str],
-):
-    """
-    Falcon-7b Uses roughly 32 GiB of memory on CPU, peak is around 36 GiB.
-    """
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    pipe = pipeline(
-        "text-classification",
-        model=model_name_or_path,
-        tokenizer=tokenizer,
-        model_kwargs={"load_in_8bit": True},
-    )
-    out = pipe(inputs)
-    return out
+class NONWESTLITClassificationPipeline(TextClassificationPipeline):
+    def _sanitize_parameters(self, return_all_scores=None, function_to_apply=None, top_k="", **tokenizer_kwargs):
+        tokenizer_kwargs["return_overflowing_tokens"] = tokenizer_kwargs.get("return_overflowing_tokens", True)
+        return super()._sanitize_parameters(return_all_scores, function_to_apply, top_k, **tokenizer_kwargs)
+
+    def preprocess(self, inputs, **tokenizer_kwargs) -> Dict[str, GenericTensor]:
+        pass

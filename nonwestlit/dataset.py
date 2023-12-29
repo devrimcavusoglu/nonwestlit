@@ -37,9 +37,11 @@ class NONWESTLITDataset(Dataset):
         instance = self._dataset[index]
         iid = instance.get("id", self.__next_id)
         label = instance.get("label") or instance.get("text_type")
+        if label is not None:
+            label = int(label) - 1  # text_type index start from 1
         return dict(
             iid=iid,
             title=instance["title"],
             input_ids=instance["article"],
-            labels=int(label) - 1,  # text_type index start from 1
+            labels=label,
         )
