@@ -1,16 +1,34 @@
-from typing import List, Tuple, Dict
-
 from peft import AutoPeftModelForSequenceClassification
-from transformers import AutoTokenizer, TextClassificationPipeline, PreTrainedTokenizerBase, BatchEncoding
-from transformers.pipelines.base import GenericTensor
+from transformers import AutoTokenizer
 
-from nonwestlit.dataset import NONWESTLITDataset
+from nonwestlit.pipeline import NONWESTLITClassificationPipeline
+from nonwestlit.utils import read_json
 
 
-class NONWESTLITClassificationPipeline(TextClassificationPipeline):
-    def _sanitize_parameters(self, return_all_scores=None, function_to_apply=None, top_k="", **tokenizer_kwargs):
-        tokenizer_kwargs["return_overflowing_tokens"] = tokenizer_kwargs.get("return_overflowing_tokens", True)
-        return super()._sanitize_parameters(return_all_scores, function_to_apply, top_k, **tokenizer_kwargs)
+def predict(
+    data_path: str, model_name_or_path: str, num_labels: int, task_type: str = "sequence-classification",
+return_scores_only: bool = False,
+):
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    model = AutoPeftModelForSequenceClassification.from_pretrained(
+        model_name_or_path, load_in_8bit=True, num_labels=num_labels
+    )
+    if model.config.pad_token_id is None:
+        model.resize_token_embeddings(len(tokenizer))
+        model.config.pad_token_id = tokenizer.pad_token_id
 
-    def preprocess(self, inputs, **tokenizer_kwargs) -> Dict[str, GenericTensor]:
-        pass
+    pipe = NONWESTLITClassificationPipeline(model=model, tokenizer=tokenizer, task_type=task_type, return_scores_only=return_scores_only)
+    data = read_json(data_path)
+    articles = [instance["article"] for instance in data]
+    return pipe(articles)
+
+
+if __name__ == "__main__":
+    out = predict(
+        data_path="/home/devrim/lab/gh/ms/nonwestlit/test_data/toy_train.json",
+        model_name_or_path="/home/devrim/lab/gh/ms/nonwestlit/outputs/russian_first_level_llama_2_lora_seq_cls_chunks/checkpoint-2640",
+        num_labels=3,
+        return_scores_only=True
+    )
+    print(out)
+

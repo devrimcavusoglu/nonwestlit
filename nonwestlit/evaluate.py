@@ -1,50 +1,12 @@
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
-import tqdm
-from peft import AutoPeftModelForSequenceClassification
-from transformers import AutoTokenizer, EvalPrediction, pipeline
+from transformers import EvalPrediction
 
-from nonwestlit.data_utils import load_hf_data
+from nonwestlit.data_utils import _get_label
 from nonwestlit.metrics import MultiLabelClassificationMetrics, SingleLabelClassificationMetrics
-from nonwestlit.utils import NonwestlitTaskTypes, sigmoid, softmax, create_neptune_run
-
-
-def prepare_chunks_for_articles(test_dataset) -> Tuple[list[list[str]], list[int]]:
-    articles = []
-    labels = []
-
-    current_article = []
-    current_label = None
-    current_title = None
-    for chunk in test_dataset:
-        title = chunk["title"]
-        chunk_text = chunk["input_ids"]
-        if title == current_title:
-            current_label = chunk["labels"]
-            current_article.append(chunk_text)
-        else:
-            if current_label is not None:
-                articles.append(current_article)
-                labels.append(current_label)
-            current_article = [chunk_text]
-            current_label = chunk["labels"]
-            current_title = title
-    return articles, labels
-
-
-def get_pred_scores(preds, task: str) -> np.ndarray:
-    scores = []
-    for pred in preds:
-        pred_scores = [p["score"] for p in pred]
-        scores.append(pred_scores)
-    all_scores = np.array(scores)
-    if task == NonwestlitTaskTypes.seq_cls:
-        all_probs = np.apply_along_axis(softmax, axis=1, arr=all_scores)
-    else:
-        all_probs = np.apply_along_axis(sigmoid, axis=1, arr=all_scores)
-    return all_probs.mean(axis=0)
+from nonwestlit.prediction import predict
+from nonwestlit.utils import NonwestlitTaskTypes, create_neptune_run, read_json
 
 
 def evaluate(
@@ -53,7 +15,7 @@ def evaluate(
     num_labels: int,
     max_sequence_length: int,
     task_type: str = "sequence-classification",
-    neptune_project_name: str | None = None
+    neptune_project_name: str | None = None,
 ):
     """
     Main evaluation function for the test runs of the fine-tuned models.
@@ -67,44 +29,21 @@ def evaluate(
             WORKSPACE_NAME/PROJECT_NAME, WORKSPACE='nonwestlit' is reserved, prepended and cannot be changed. This
             parameter is set as positional argument to avoid having conflicts.
     """
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoPeftModelForSequenceClassification.from_pretrained(
-        model_path, num_labels=num_labels, load_in_8bit=True
-    )
-
-    # An issue related with loading a model checkpoint.
-    # https://github.com/huggingface/peft/issues/577
-    pipe = pipeline(
-        "text-classification",
-        model=model,
-        tokenizer=tokenizer,
-        return_all_scores=True,
-        function_to_apply="none",
-    )
-
-    _, _, test_dataset = load_hf_data(
-        data_path=data_path,
-        tokenizer=tokenizer,
-        splits=["test"],
-        max_sequence_length=max_sequence_length,
-    )
-
     if task_type == NonwestlitTaskTypes.seq_cls:
+        multi_label = False
         metrics = SingleLabelClassificationMetrics()
     elif task_type == NonwestlitTaskTypes.multi_seq_cls:
+        multi_label = True
         metrics = MultiLabelClassificationMetrics()
     else:
-        raise ValueError("Unknown task type '%s'. Has to be on of "
-                         "[sequence-classification, multilabel-sequence-classification]" % task_type)
+        raise ValueError(
+            "Unknown task type '%s'. Has to be on of "
+            "[sequence-classification, multilabel-sequence-classification]" % task_type
+        )
 
-    articles, labels = prepare_chunks_for_articles(test_dataset)
-
-    all_predictions = []
-    total_len = len(articles)
-    for article_chunks, label in tqdm.tqdm(zip(articles, labels), total=total_len):
-        predictions = pipe(article_chunks)
-        final_probs = get_pred_scores(predictions, task_type)  # Apply avg. pooling over softmax.
-        all_predictions.append(final_probs)
+    data = read_json(data_path)
+    labels = [_get_label(article, multi_label=multi_label, num_labels=num_labels) for article in data]
+    all_predictions = predict(data_path=data_path, model_name_or_path=model_path, num_labels=num_labels, return_scores_only=True)
 
     eval_pred = EvalPrediction(predictions=np.array(all_predictions), label_ids=np.array(labels))
     metric_results = metrics(eval_pred, function_to_apply=None)
@@ -114,7 +53,9 @@ def evaluate(
         run["metrics"] = metric_results
         run["sys/tags"].add("evaluation")
         model_path = Path(model_path).resolve()
-        model_name = model_path.parent.name if model_path.name.startswith("checkpoint-") else model_path.name
+        model_name = (
+            model_path.parent.name if model_path.name.startswith("checkpoint-") else model_path.name
+        )
         data_path = Path(data_path).resolve()
         aux_data = {
             "model_name": model_name,
