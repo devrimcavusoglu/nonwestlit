@@ -2,14 +2,18 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List
 
 import numpy as np
-from sklearn.metrics import average_precision_score, precision_recall_fscore_support, accuracy_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    f1_score,
+    precision_recall_fscore_support,
+)
 from transformers import EvalPrediction
 
 from nonwestlit.utils import sigmoid, softmax
 
 
 class ClassificationMetrics(ABC):
-
     def __call__(self, *args, **kwargs):
         return self.compute(*args, **kwargs)
 
@@ -26,7 +30,9 @@ class SingleLabelClassificationMetrics(ClassificationMetrics):
         ohe[idx, x] = 1
         return ohe
 
-    def compute(self, input_data: EvalPrediction, prefix: str = "val", function_to_apply: Callable = softmax) -> Dict[str, Any]:
+    def compute(
+        self, input_data: EvalPrediction, prefix: str = "val", function_to_apply: Callable = softmax
+    ) -> Dict[str, Any]:
         probs = input_data.predictions
         n_labels = probs.shape[1]
         if function_to_apply is not None:
@@ -34,17 +40,27 @@ class SingleLabelClassificationMetrics(ClassificationMetrics):
         pred_cls = probs.argmax(-1)
         metrics = {}
         metrics[f"{prefix}_accuracy"] = accuracy_score(y_true=input_data.label_ids, y_pred=pred_cls)
-        metrics[f"{prefix}_f1_macro"] = f1_score(y_true=input_data.label_ids, y_pred=pred_cls, average="macro")
-        metrics[f"{prefix}_f1_weighted"] = f1_score(y_true=input_data.label_ids, y_pred=pred_cls, average="weighted")
-        p, r, f, _ = precision_recall_fscore_support(y_pred=pred_cls, y_true=input_data.label_ids, average=None)
+        metrics[f"{prefix}_f1_macro"] = f1_score(
+            y_true=input_data.label_ids, y_pred=pred_cls, average="macro"
+        )
+        metrics[f"{prefix}_f1_weighted"] = f1_score(
+            y_true=input_data.label_ids, y_pred=pred_cls, average="weighted"
+        )
+        p, r, f, _ = precision_recall_fscore_support(
+            y_pred=pred_cls, y_true=input_data.label_ids, average=None
+        )
         for i in range(len(p)):
             metrics[f"{prefix}_precision_{i}"] = p[i]
             metrics[f"{prefix}_recall_{i}"] = r[i]
             metrics[f"{prefix}_f1_{i}"] = f[i]
 
         labels_ohe = self.one_hot_encoding(input_data.label_ids, n_labels)
-        metrics["mAP"] = average_precision_score(y_true=labels_ohe, y_score=probs)  # default avg='macro'
-        metrics["mAP_weighted"] = average_precision_score(y_true=labels_ohe, y_score=probs, average="weighted")
+        metrics["mAP"] = average_precision_score(
+            y_true=labels_ohe, y_score=probs
+        )  # default avg='macro'
+        metrics["mAP_weighted"] = average_precision_score(
+            y_true=labels_ohe, y_score=probs, average="weighted"
+        )
         return metrics
 
 
@@ -64,7 +80,9 @@ class MultiLabelClassificationMetrics(ClassificationMetrics):
         metrics_at_t = []
         for t in thresholds:
             pred_cls = np.where(probs >= t, 1, 0)
-            p, r, f, _ = precision_recall_fscore_support(y_pred=pred_cls, y_true=labels, average="micro")
+            p, r, f, _ = precision_recall_fscore_support(
+                y_pred=pred_cls, y_true=labels, average="micro"
+            )
             metrics_at_t.append([p, r, f])
         return np.mean(metrics_at_t, axis=0)
 
@@ -89,7 +107,9 @@ class MultiLabelClassificationMetrics(ClassificationMetrics):
         metrics["PMF"] = pmf
 
         metrics["mAP"] = average_precision_score(y_true=labels, y_score=probs)
-        metrics["mAP_weighted"] = average_precision_score(y_true=labels, y_score=probs, average="weighted")
+        metrics["mAP_weighted"] = average_precision_score(
+            y_true=labels, y_score=probs, average="weighted"
+        )
 
         return metrics
 
@@ -105,4 +125,5 @@ if __name__ == "__main__":
     metrics = SingleLabelClassificationMetrics(num_labels=3)
     out = metrics(metric_obj, function_to_apply=None)
     import json
+
     print(json.dumps(out, indent=2))

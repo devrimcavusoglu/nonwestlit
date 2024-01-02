@@ -1,7 +1,8 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 import datasets
+import numpy as np
 from transformers import PreTrainedTokenizerBase
 
 from nonwestlit.collator import (
@@ -77,3 +78,27 @@ def load_hf_data(
         test_dataset = test_dataset.map(collator)
 
     return train_dataset, eval_dataset, test_dataset
+
+
+def _to_one_hot(labels: list[int], num_labels: int) -> list[int]:
+    x = np.zeros(num_labels, dtype=np.float16)
+    x[labels] = 1.0
+    return x.tolist()
+
+
+def _get_label(article: Dict[str, Any], multi_label: bool, num_labels: int):
+    label = article.get("label")
+    if label is None:
+        if not multi_label:
+            return
+        else:
+            label = _to_one_hot(labels=[], num_labels=num_labels)
+    elif isinstance(label, int):
+        label = int(label) - 1
+    elif isinstance(label, str):
+        if multi_label:
+            label = [int(l) - 1 for l in label.split(",")]
+            label = _to_one_hot(label, num_labels)
+        else:
+            label = int(label) - 1
+    return label

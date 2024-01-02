@@ -18,7 +18,12 @@ from transformers.utils import is_peft_available
 
 from nonwestlit.data_utils import get_collator, load_hf_data, load_torch_data
 from nonwestlit.metrics import MultiLabelClassificationMetrics, SingleLabelClassificationMetrics
-from nonwestlit.utils import NonwestlitTaskTypes, Nullable, print_trainable_parameters, create_neptune_run
+from nonwestlit.utils import (
+    NonwestlitTaskTypes,
+    Nullable,
+    create_neptune_run,
+    print_trainable_parameters,
+)
 
 if is_peft_available():
     from peft import (
@@ -145,17 +150,14 @@ def init_model(
 
     if tokenizer.pad_token is None:
         # Adding a new PAD token.
-        # https://stackoverflow.com/a/73137031
-        # pad token can optionally be set to eos token, but we will define a new one.
-        tokenizer.add_special_tokens({"pad_token": "<|padding|>"})
-        model.resize_token_embeddings(len(tokenizer))
-        model.config.pad_token_id = tokenizer.pad_token_id
+        # https://stackoverflow.com/q/70544129/7871601
+        # pad token can optionally be defined as a new token, but we will set to eos token.
+        tokenizer.pad_token = tokenizer.eos_token
     return tokenizer, model
 
 
 def train(
     model_name_or_path: str,
-
     output_dir: str,
     train_data_path: str,
     eval_data_path: Optional[str] = None,
@@ -269,14 +271,21 @@ def train(
     )
     if dataset_framework == "torch":
         collator = get_collator(
-            task_type, tokenizer, max_sequence_length, is_mapping=False,
-            num_virtual_tokens=num_virtual_tokens
+            task_type,
+            tokenizer,
+            max_sequence_length,
+            is_mapping=False,
+            num_virtual_tokens=num_virtual_tokens,
         )
         train_dataset, eval_dataset, _ = load_torch_data(train_data_path, eval_data_path)
     elif dataset_framework == "hf":
         assert train_data_path == eval_data_path
         collator = get_collator(
-            task_type, tokenizer, max_sequence_length, is_mapping=True, num_virtual_tokens=num_virtual_tokens
+            task_type,
+            tokenizer,
+            max_sequence_length,
+            is_mapping=True,
+            num_virtual_tokens=num_virtual_tokens,
         )
         train_dataset, eval_dataset, _ = load_hf_data(
             train_data_path, tokenizer, collator, max_sequence_length=max_sequence_length

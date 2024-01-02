@@ -83,9 +83,7 @@ def _check_neptune_creds(neptune_project_name: str):
     raise EnvironmentError("Neither environment variables nor `neptune.cfg` is found.")
 
 
-def create_neptune_run(
-    neptune_project_name: str, callbacks: list | None = None
-) -> Run:
+def create_neptune_run(neptune_project_name: str, callbacks: list | None = None) -> Run:
     _check_neptune_creds(neptune_project_name)
     run = neptune.init_run()
     if callbacks is not None:
