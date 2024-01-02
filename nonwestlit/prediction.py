@@ -54,7 +54,7 @@ def predict(
     model = AutoPeftModelForSequenceClassification.from_pretrained(
         model_name_or_path, load_in_8bit=True, num_labels=num_labels
     )
-    if model.config.pad_token_id is None:
+    if model.config.pad_token_id is None and tokenizer.pad_token != tokenizer.eos_token:
         model.resize_token_embeddings(len(tokenizer))
         model.config.pad_token_id = tokenizer.pad_token_id
 
