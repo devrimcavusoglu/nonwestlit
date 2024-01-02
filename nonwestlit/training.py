@@ -150,11 +150,9 @@ def init_model(
 
     if tokenizer.pad_token is None:
         # Adding a new PAD token.
-        # https://stackoverflow.com/a/73137031
-        # pad token can optionally be set to eos token, but we will define a new one.
-        tokenizer.add_special_tokens({"pad_token": "<|padding|>"})
-        model.resize_token_embeddings(len(tokenizer))
-        model.config.pad_token_id = tokenizer.pad_token_id
+        # https://stackoverflow.com/q/70544129/7871601
+        # pad token can optionally be defined as a new token, but we will set to eos token.
+        tokenizer.pad_token = tokenizer.eos_token
     return tokenizer, model
 
 
