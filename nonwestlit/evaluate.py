@@ -45,7 +45,10 @@ def evaluate(
     data = read_json(data_path)
     labels = [_get_label(article, multi_label=multi_label, num_labels=num_labels) for article in data]
     all_predictions = predict(
-        data_path=data_path, model_name_or_path=model_name_or_path, num_labels=num_labels, task_type=task_type
+        data_path=data_path,
+        model_name_or_path=model_name_or_path,
+        num_labels=num_labels,
+        task_type=task_type,
     )
 
     eval_pred = EvalPrediction(predictions=np.array(all_predictions), label_ids=np.array(labels))

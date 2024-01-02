@@ -65,7 +65,7 @@ def predict(
         "in_sample_batch_size": in_sample_batch_size,
         "max_sequence_length": max_sequence_length,
         "return_scores_only": return_scores_only,
-        "task_type": task_type
+        "task_type": task_type,
     }
 
     out = []
@@ -90,6 +90,6 @@ if __name__ == "__main__":
         num_labels=7,
         in_sample_batch_size=1,
         return_scores_only=True,
-        task_type="multilabel-sequence-classification"
+        task_type="multilabel-sequence-classification",
     )
     print(out)
