@@ -90,24 +90,3 @@ def predict(
     for output in tqdm(pipe(articles, **pipe_args), desc="Prediction"):
         out.append(output)
     return out
-
-
-if __name__ == "__main__":
-    # Single label
-    # out = predict(
-    #     data_path="/home/devrim/lab/gh/ms/nonwestlit/test_data/toy_train.json",
-    #     model_name_or_path="/home/devrim/lab/gh/ms/nonwestlit/outputs/russian_first_level_llama_2_lora_seq_cls_chunks/checkpoint-2640",
-    #     num_labels=3,
-    #     return_scores_only=True,
-    # )
-
-    # Multilabel
-    out = predict(
-        data_path="/home/devrim/lab/gh/ms/nonwestlit/test_data/toy_test_multilabel.json",
-        model_name_or_path="/home/devrim/lab/gh/ms/nonwestlit/outputs/falcon-7b_russian_cultural_discourse_type_lora_seq_cls_lr_1.75e-5/checkpoint-3570",
-        num_labels=7,
-        in_sample_batch_size=1,
-        return_scores_only=True,
-        task_type="multilabel-sequence-classification",
-    )
-    print(out)

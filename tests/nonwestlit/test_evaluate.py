@@ -43,7 +43,9 @@ def _get_tokenizer_and_model(model_name, num_labels):
     return tokenizer, model
 
 
-def test_evaluate_single_label(expected_out_predict, _seed, _test_model_name, _test_singlelabel_data):
+def test_evaluate_single_label(
+    expected_out_single_label, _seed, _test_model_name, _test_singlelabel_data
+):
     set_seed(_seed)
     data_path, num_labels = _test_singlelabel_data
     tokenizer, model = _get_tokenizer_and_model(_test_model_name, num_labels)
@@ -56,7 +58,7 @@ def test_evaluate_single_label(expected_out_predict, _seed, _test_model_name, _t
         in_sample_batch_size=8,
         max_sequence_length=tokenizer.model_max_length,
     )
-    assert_almost_equal(actual, expected_out_predict)
+    assert_almost_equal(actual, expected_out_single_label)
 
 
 def test_evaluate_multi_label(expected_out_multi_label, _seed, _test_model_name, _test_multilabel_data):

@@ -67,23 +67,24 @@ class NONWESTLITClassificationPipeline(TextClassificationPipeline):
     def merge_batch_outputs(self, all_outputs: list[ModelOutput]) -> ModelOutput:
         logits = []
         for output in all_outputs:
-            logits.append(output["logits"])
+            logits.append(output["logits"].cpu().detach().numpy())
         return ModelOutput(
             logits=np.vstack(logits),
         )
 
     def _forward(self, model_inputs, in_sample_batch_size: int = 1):
         self.overflow_to_sample_mapping = model_inputs.pop("overflow_to_sample_mapping")
-        all_output = []
+        logits = []
         for batch in self.batch_iterator(model_inputs, in_sample_batch_size):
             model_output = super()._forward(model_inputs=batch)
-            all_output.append(model_output)
-        return all_output
+            logits.append(model_output["logits"].cpu().detach().numpy())
+        return ModelOutput(
+            logits=np.vstack(logits),
+        )
 
     def postprocess(
         self, model_outputs, function_to_apply=None, top_k=1, _legacy=True, return_scores_only=False
     ):
-        model_outputs = self.merge_batch_outputs(model_outputs)
         if function_to_apply is None:
             if self.model.config.problem_type == "multi_label_classification":
                 function_to_apply = sigmoid
