@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-from transformers import EvalPrediction
+from transformers import EvalPrediction, PreTrainedModel
 
 from nonwestlit.data_utils import _get_label
 from nonwestlit.metrics import MultiLabelClassificationMetrics, SingleLabelClassificationMetrics
@@ -10,7 +10,7 @@ from nonwestlit.utils import NonwestlitTaskTypes, create_neptune_run, read_json
 
 
 def evaluate(
-    model_name_or_path: str,
+    model_name_or_path: str | PreTrainedModel,
     data_path: str,
     num_labels: int,
     task_type: str = "sequence-classification",
@@ -21,7 +21,7 @@ def evaluate(
     Main evaluation function for the test runs of the fine-tuned models.
 
     Args:
-        model_name_or_path (str): Fine-tuned model checkpoint.
+        model_name_or_path (str): Fine-tuned model checkpoint, or a loaded model object.
         data_path (str): Path to the test dataset folder.
         num_labels (int): Number of labels in the dataset.
         task_type (str): Task type of the training. Set as 'sequence-classification' by default.
@@ -49,6 +49,8 @@ def evaluate(
         model_name_or_path=model_name_or_path,
         num_labels=num_labels,
         task_type=task_type,
+        return_scores_only=True,  # set true to get all logits
+        **kwargs,
     )
 
     eval_pred = EvalPrediction(predictions=np.array(all_predictions), label_ids=np.array(labels))
