@@ -153,6 +153,7 @@ def init_model(
         # https://stackoverflow.com/q/70544129/7871601
         # pad token can optionally be defined as a new token, but we will set to eos token.
         tokenizer.pad_token = tokenizer.eos_token
+        model.config.pad_token_id = model.config.eos_token_id
     return tokenizer, model
 
 
