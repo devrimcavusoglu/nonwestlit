@@ -6,7 +6,9 @@ from typing import Optional
 
 import neptune
 import numpy as np
+import torch
 from neptune import Run
+from transformers import BitsAndBytesConfig
 from transformers.integrations import NeptuneCallback
 
 from nonwestlit import NEPTUNE_CFG
@@ -30,6 +32,22 @@ def read_cfg(path: str) -> ConfigParser:
     cfg = ConfigParser()
     cfg.read(path)
     return cfg
+
+
+def setup_bnb_quantization(bnb_quantization: Optional[str] = None) -> Nullable[BitsAndBytesConfig]:
+    if bnb_quantization == "4bit":
+        return BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+    elif bnb_quantization == "8bit":
+        return BitsAndBytesConfig(
+            load_in_8bit=True,
+        )
+    return None
+
 
 
 def print_trainable_parameters(model):
