@@ -22,7 +22,7 @@ from nonwestlit.utils import (
     NonwestlitTaskTypes,
     Nullable,
     create_neptune_run,
-    print_trainable_parameters,
+    print_trainable_parameters, setup_bnb_quantization,
 )
 
 if is_peft_available():
@@ -43,21 +43,6 @@ if is_peft_available():
         "multilabel-sequence-classification": TaskType.SEQ_CLS,
         "prompt-tuning": TaskType.CAUSAL_LM,
     }
-
-
-def setup_bnb_quantization(bnb_quantization: Optional[str] = None) -> Nullable[BitsAndBytesConfig]:
-    if bnb_quantization == "4bit":
-        return BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-        )
-    elif bnb_quantization == "8bit":
-        return BitsAndBytesConfig(
-            load_in_8bit=True,
-        )
-    return None
 
 
 def _freeze_backbone(model: PreTrainedModel) -> None:
@@ -150,10 +135,11 @@ def init_model(
 
     if tokenizer.pad_token is None:
         # Adding a new PAD token.
-        # https://stackoverflow.com/q/70544129/7871601
-        # pad token can optionally be defined as a new token, but we will set to eos token.
-        tokenizer.pad_token = tokenizer.eos_token
-        model.config.pad_token_id = model.config.eos_token_id
+        # https://stackoverflow.com/a/73137031
+        # pad token can optionally be set to eos token, but we will define a new one.
+        tokenizer.add_special_tokens({"pad_token": "<|padding|>"})
+        model.resize_token_embeddings(len(tokenizer))
+        model.config.pad_token_id = tokenizer.pad_token_id
     return tokenizer, model
 
 

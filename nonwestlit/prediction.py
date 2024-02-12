@@ -10,7 +10,7 @@ from transformers import (
 )
 
 from nonwestlit.pipeline import NONWESTLITClassificationPipeline
-from nonwestlit.utils import read_json
+from nonwestlit.utils import read_json, setup_bnb_quantization
 
 
 class ListDataset(Dataset):
@@ -61,8 +61,9 @@ def predict(
     set_seed(42)
     if isinstance(model_name_or_path, str):
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        quantization_cfg = setup_bnb_quantization("4bit")
         model = AutoPeftModelForSequenceClassification.from_pretrained(
-            model_name_or_path, load_in_8bit=True, num_labels=num_labels
+            model_name_or_path, num_labels=num_labels, quantization_config=quantization_cfg
         )
     elif tokenizer is None:
         raise ValueError(
@@ -72,9 +73,13 @@ def predict(
     else:
         model = model_name_or_path
 
-    if model.config.pad_token_id is None and tokenizer.pad_token != tokenizer.eos_token:
-        model.resize_token_embeddings(len(tokenizer))
-        model.config.pad_token_id = tokenizer.pad_token_id
+    if model.config.pad_token_id is None:
+        if tokenizer.pad_token != tokenizer.eos_token:
+            model.resize_token_embeddings(len(tokenizer))
+            model.config.pad_token_id = tokenizer.pad_token_id
+        else:
+            tokenizer.pad_token = tokenizer.eos_token
+            model.config.pad_token_id = model.config.eos_token_id
 
     pipe = NONWESTLITClassificationPipeline(model=model, tokenizer=tokenizer)
     data = read_json(data_path)
