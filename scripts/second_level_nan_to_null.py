@@ -7,8 +7,10 @@ from nonwestlit.utils import read_json
 def correct_nans(path: str):
     path = Path(path)
     for file in path.rglob("*/*.json"):
+        print(f"Correcting '{file.as_posix()}'")
         content = file.read_text("utf-8")
         content = content.replace('"label": NaN', '"label": null')
+        content = content.replace('"article": NaN', '"article": ""')
         file.write_text(content)
 
 

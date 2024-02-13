@@ -12,7 +12,7 @@ from transformers import (
     LlamaForSequenceClassification,
     PreTrainedModel,
     Trainer,
-    TrainingArguments,
+    TrainingArguments, BertForSequenceClassification,
 )
 from transformers.utils import is_peft_available
 
@@ -53,10 +53,14 @@ def _freeze_backbone(model: PreTrainedModel) -> None:
         model: FalconForSequenceClassification
         # freeze the base/backbone transformer, `model.transformer` is specific to `FalconForSequenceClassification`
         model.transformer.requires_grad_(False)
-    if "llama" in model.name_or_path:
+    elif "llama" in model.name_or_path:
         model: LlamaForSequenceClassification
         # freeze the base/backbone transformer, `model.model` is specific to `LlamaForSequenceClassification`
         model.model.requires_grad_(False)
+    elif "bert" in model.name_or_path:
+        model: BertForSequenceClassification
+        # freeze the base/backbone transformer, `model.bert` is specific to `BertForSequenceClassification`
+        model.bert.requires_grad_(False)
 
 
 def _get_adapter_config(

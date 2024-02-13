@@ -6,7 +6,7 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
-    set_seed,
+    set_seed, AutoModelForSequenceClassification,
 )
 
 from nonwestlit.pipeline import NONWESTLITClassificationPipeline
@@ -39,6 +39,7 @@ def predict(
     max_sequence_length: int = 2048,
     return_scores_only: bool = False,
     task_type: str = None,
+    use_peft: bool = True
 ):
     """
     Main predict function for predictions input texts from the fine-tuned models.
@@ -57,14 +58,21 @@ def predict(
         return_scores_only (bool): If true, raw model outputs/logits will be returned.
         task_type (str): Task type of the prediction. By default, set as 'sequence-classification'. Possible
             values are [sequence-classification, multilabel-sequence-classification].
+        use_peft (bool): If true, use PEFT to load the model trained as adapter with lora or another adapter
+            setting, otherwise load the model without the adapter setting. True by default.
     """
     set_seed(42)
     if isinstance(model_name_or_path, str):
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        quantization_cfg = setup_bnb_quantization("4bit")
-        model = AutoPeftModelForSequenceClassification.from_pretrained(
-            model_name_or_path, num_labels=num_labels, quantization_config=quantization_cfg
-        )
+        if use_peft:
+            quantization_cfg = setup_bnb_quantization("4bit")
+            model = AutoPeftModelForSequenceClassification.from_pretrained(
+                model_name_or_path, num_labels=num_labels, quantization_config=quantization_cfg
+            )
+        else:
+            model = AutoModelForSequenceClassification.from_pretrained(
+                model_name_or_path, num_labels=num_labels,
+            )
     elif tokenizer is None:
         raise ValueError(
             "If 'model_name_or_path' is a model object and not string, then 'tokenizer' has to be "
