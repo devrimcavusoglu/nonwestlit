@@ -1,16 +1,17 @@
 <p align="center">
 <img src="https://site.unibo.it/nonwestlit/en/project/@@images/308d566c-4b9d-42c1-bcb6-d883a4057989.png">
 <br>
-<a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/python-3.10-blue"></a>
+<a href="https://www.python.org/downloads/release/python-31011/"><img alt="Code style: black" src="https://img.shields.io/badge/python-3.10-blue"></a>
 <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+<a href="https://arxiv.org/abs/2407.15136"><img alt="Code style: black" src="https://img.shields.io/badge/arXiv-2407.15136-b31b15.svg"></a>
 </p>
 
 <h1 align="center">NONWESTLIT</h1>
 
 
-Project codebase for NONWESTLIT Project. The current primary focus within the project scope is to get experiment results on the dataset for text classification (3-way).
+Project codebase for the paper [A multi-level multi-label text classification dataset of 19th century Ottoman and Russian literary and critical texts](https://arxiv.org/abs/2407.15136).
 
-We aim to try:
+The objectives:
 
 * Linear probing to the SOTA LLMs (e.g. Llama-2, Falcon).
 * Fine-tune adapters e.g. LoRA.
@@ -79,7 +80,7 @@ GPT-2 is used for test purposes, so no harm trying the commands above (you will 
 
 **Deepspeed**
 
-It's currently experimental, and it's not tested yet. You can only use w/ GPU's having Ampere arch. (RTX 3000 series+ or workstation GPUs). I didn't perform training with it, but it seems promising.
+It's currently experimental, and it is not yet available in the main branch, and it's not tested yet. You can only use w/ GPU's having Ampere arch. (RTX 3000 series+ or workstation GPUs).
 
 ### Pushing the model to HF Hub
 
