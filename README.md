@@ -146,3 +146,29 @@ To run tests, use
 ```shell
 python -m scripts.run_tests
 ```
+
+## Citation
+
+If you use the dataset or code in your research, please cite our paper:
+
+```bibtex
+@inproceedings{gokceoglu-etal-2024-multi,
+    title = "A multi-level multi-label text classification dataset of 19th century Ottoman and {R}ussian literary and critical texts",
+    author = {Gokceoglu, Gokcen  and
+      {\c{C}}avu{\c{s}}o{\u{g}}lu, Devrim  and
+      Akbas, Emre  and
+      Dolcerocca, {\"O}zen},
+    editor = "Ku, Lun-Wei  and
+      Martins, Andre  and
+      Srikumar, Vivek",
+    booktitle = "Findings of the Association for Computational Linguistics: ACL 2024",
+    month = aug,
+    year = "2024",
+    address = "Bangkok, Thailand",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.findings-acl.393/",
+    doi = "10.18653/v1/2024.findings-acl.393",
+    pages = "6585--6596",
+    abstract = "This paper introduces a multi-level, multi-label text classification dataset comprising over 3000 documents. The dataset features literary and critical texts from 19th-century Ottoman Turkish and Russian. It is the first study to apply large language models (LLMs) to this dataset, sourced from prominent literary periodicals of the era. The texts have been meticulously organized and labeled. This was done according to a taxonomic framework that takes into account both their structural and semantic attributes. Articles are categorized and tagged with bibliometric metadata by human experts. We present baseline classification results using a classical bag-of-words (BoW) naive Bayes model and three modern LLMs: multilingual BERT, Falcon, and Llama-v2. We found that in certain cases, Bag of Words (BoW) outperforms Large Language Models (LLMs), emphasizing the need for additional research, especially in low-resource language settings. This dataset is expected to be a valuable resource for researchers in natural language processing and machine learning, especially for historical and low-resource languages. The dataset is publicly available."
+}
+```
